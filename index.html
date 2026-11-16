@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alarme de movimento</title>
+<style>
+body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee}
+input,select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
+button{background:#2a7de1;border:0;font-weight:bold}
+video{width:100%;border-radius:8px;margin-top:8px;background:#000}
+#status{font-size:20px;margin:10px 0}
+small{color:#999}
+</style>
+</head>
+<body>
+<h2>Alarme de movimento</h2>
+<div id="setup">
+<input id="token" placeholder="Token do bot (123456:ABC...)" autocomplete="off">
+<input id="chat" placeholder="Chat ID (número)" inputmode="numeric">
+<select id="cam">
+<option value="environment">Câmera traseira</option>
+<option value="user">Câmera frontal</option>
+</select>
+<button id="go">Iniciar</button>
+<small>Token e Chat ID ficam salvos só neste aparelho.</small>
+</div>
+<video id="v" playsinline muted style="display:none"></video>
+<div id="status"></div>
+<script>
+const $ = id => document.getElementById(id);
+try { $('token').value = localStorage.getItem('tg_token') || ''; $('chat').value = localStorage.getItem('tg_chat') || ''; } catch(e) {}
+const LIMITE = 3000;
+const INTERVALO = 10000;
+let prev = null, ultimo = 0;
+async function enviar(video, token, chat) {
+const c = document.createElement('canvas');
+c.width = video.videoWidth; c.height = video.videoHeight;
+c.getContext('2d').drawImage(video, 0, 0);
+const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
+const fd = new FormData();
+fd.append('chat_id', chat);
+fd.append('caption', 'Movimento detectado!');
+fd.append('photo', blob, 'mov.jpg');
+const r = await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', {method: 'POST', body: fd});
+if (!r.ok) throw new Error('Telegram respondeu ' + r.status);
+}
+$('go').onclick = async () => {
+const token = $('token').value.trim(), chat = $('chat').value.trim();
+if (!token || !chat) { $('status').innerText = 'Preencha token e Chat ID.'; return; }
+try { localStorage.setItem('tg_token', token); localStorage.setItem('tg_chat', chat); } catch(e) {}
+try {
+const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: $('cam').value}});
+const v = $('v');
+v.srcObject = stream; v.style.display = 'block';
+await v.play();
+try { await navigator.wakeLock.request('screen'); } catch(e) {}
+$('setup').style.display = 'none';
+$('status').innerText = 'Vigiando...';
+const cv = document.createElement('canvas');
+cv.width = 320; cv.height = 240;
+const ctx = cv.getContext('2d', {willReadFrequently: true});
+ctx.filter = 'blur(3px)';
+setInterval(async () => {
+ctx.drawImage(v, 0, 0, 320, 240);
+const d = ctx.getImageData(0, 0, 320, 240).data;
+const g = new Uint8Array(320 * 240);
+for (let i = 0; i < g.length; i++) g[i] = (d[i*4] + d[i*4+1] + d[i*4+2]) / 3;
+if (prev) {
+let area = 0;
+for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - prev[i]) > 25) area++;
+const mov = area > LIMITE;
+$('status').innerText = mov ? 'MOVIMENTO! (' + area + ')' : 'Sem movimento (' + area + ')';
+if (mov && Date.now() - ultimo > INTERVALO) {
+ultimo = Date.now();
+try { await enviar(v, token, chat); }
+catch(e) { $('status').innerText = 'Erro ao enviar: ' + e.message; }
+}
+}
+prev = g;
+}, 300);
+} catch(e) {
+$('status').innerText = 'Erro: ' + e.message;
+}
+};
+</script>
+</body>
+</html>
