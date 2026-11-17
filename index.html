@@ -23,8 +23,7 @@ video{width:100%;border-radius:8px;margin-top:8px;background:#000}
 <h2>Alarme de movimento</h2>
 
 <div id="setup">
-  <input id="api" placeholder="URL do Worker (https://...workers.dev)" inputmode="url" autocapitalize="off">
-  <input id="key" type="password" placeholder="Chave de acesso (APP_KEY)" autocomplete="off">
+  <input id="token" type="password" placeholder="Token do bot (do @BotFather)" autocomplete="off" autocapitalize="off">
   <input id="chat" placeholder="Chat ID" inputmode="numeric">
   <select id="cam">
     <option value="environment">Câmera traseira</option>
@@ -52,8 +51,9 @@ video{width:100%;border-radius:8px;margin-top:8px;background:#000}
 <script>
 const $ = id => document.getElementById(id);
 
-let API = "", APP_KEY = "", chat = "";
+let TOKEN = "", chat = "";
 let prev = null, ultimo = 0, polling = false, pollTimer = null, alarmTimer = null;
+let enviadas = [];
 
 const LIMITE = 3000;
 const INTERVALO = 10000;
@@ -61,66 +61,66 @@ const INTERVALO = 10000;
 /* ---------- configuração salva só neste aparelho ---------- */
 function loadCfg() {
   try {
-    const c = JSON.parse(localStorage.getItem("alarme_cfg") || "{}");
-    $("api").value = c.api || "";
-    $("key").value = c.key || "";
+    const c = JSON.parse(localStorage.getItem("alarme_cfg2") || "{}");
+    $("token").value = c.token || "";
     $("chat").value = c.chat || "";
   } catch(e) {}
 }
-function saveCfg() {
-  try {
-    localStorage.setItem("alarme_cfg", JSON.stringify({api: API, key: APP_KEY, chat}));
-  } catch(e) {}
-}
 function readCfg() {
-  API = $("api").value.trim().replace(/\/+$/, "");
-  APP_KEY = $("key").value.trim();
+  TOKEN = $("token").value.trim().replace(/^bot/i, "");
   chat = $("chat").value.trim();
-  if (!API || !APP_KEY || !chat) {
-    $("status").innerText = "Preencha URL do Worker, chave e Chat ID.";
+  if (!TOKEN || !chat) {
+    $("status").innerText = "Preencha o token do bot e o Chat ID.";
     return false;
   }
-  if (!/^https:\/\//.test(API)) {
-    $("status").innerText = "A URL do Worker deve começar com https://";
-    return false;
-  }
-  saveCfg();
+  try {
+    localStorage.setItem("alarme_cfg2", JSON.stringify({token: TOKEN, chat}));
+  } catch(e) {}
   return true;
 }
 
-/* ---------- API ---------- */
-async function api(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  headers.set("X-App-Key", APP_KEY);
-  const response = await fetch(API + path, {...options, headers});
-  let result = {};
-  try { result = await response.json(); } catch(e) {}
-  if (!response.ok || result.ok === false) {
-    throw new Error(result.error || result.description || "Erro na comunicação (" + response.status + ")");
-  }
-  return result;
+/* ---------- Telegram direto ---------- */
+async function tg(metodo, opcoes = {}) {
+  const r = await fetch("https://api.telegram.org/bot" + TOKEN + "/" + metodo, opcoes);
+  let d = {};
+  try { d = await r.json(); } catch(e) {}
+  if (!d.ok) throw new Error(d.description || "Erro na comunicação (" + r.status + ")");
+  return d;
+}
+
+async function testarBot() {
+  const d = await tg("getMe");
+  $("status").innerText = "Conectado como @" + d.result.username;
 }
 
 /* ---------- mensagens ---------- */
-function habilitarMensagens() {
+async function conectar() {
+  try {
+    await testarBot();
+  } catch(e) {
+    $("status").innerText = "Token inválido ou sem internet: " + e.message;
+    return false;
+  }
   $("messageText").disabled = false;
   $("sendMessage").disabled = false;
   carregarMensagens();
   clearInterval(pollTimer);
   pollTimer = setInterval(carregarMensagens, 3000);
+  return true;
 }
 
 async function enviarMensagem() {
   const input = $("messageText");
   const text = input.value.trim();
-  if (!text || !chat) return;
+  if (!text) return;
   try {
     $("sendMessage").disabled = true;
-    await api("/sendMessage", {
+    await tg("sendMessage", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({chat_id: chat, text})
     });
+    enviadas.push({date: Math.floor(Date.now()/1000), text, mine: true});
     input.value = "";
     $("status").innerText = "Mensagem enviada ao Telegram.";
     carregarMensagens();
@@ -131,26 +131,31 @@ async function enviarMensagem() {
   }
 }
 
-function mostrarMensagens(messages) {
+function mostrarMensagens(lista) {
   const box = $("messages");
   const noFim = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.innerHTML = "";
-  messages.forEach(m => {
+  lista.forEach(m => {
     const div = document.createElement("div");
-    div.className = "msg" + (m.from_me || m.out ? " mine" : "");
+    div.className = "msg" + (m.mine ? " mine" : "");
     const hora = new Date(m.date * 1000).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
-    div.textContent = hora + " — " + (m.text || "");
+    div.textContent = hora + " — " + m.text;
     box.appendChild(div);
   });
   if (noFim) box.scrollTop = box.scrollHeight;
 }
 
 async function carregarMensagens() {
-  if (polling || !chat) return;
+  if (polling) return;
   polling = true;
   try {
-    const result = await api("/messages?chat_id=" + encodeURIComponent(chat));
-    mostrarMensagens(result.messages || []);
+    const d = await tg("getUpdates?limit=100");
+    const recebidas = d.result
+      .map(u => u.message)
+      .filter(m => m && m.text && String(m.chat.id) === chat)
+      .map(m => ({date: m.date, text: m.text, mine: false}));
+    const tudo = recebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
+    mostrarMensagens(tudo);
   } catch(e) {
     $("status").innerText = "Erro nas mensagens: " + e.message;
   } finally {
@@ -170,7 +175,7 @@ async function enviarFoto(video) {
   form.append("chat_id", chat);
   form.append("photo", blob, "movimento.jpg");
   form.append("caption", "Movimento detectado!");
-  await api("/sendPhoto", {method: "POST", body: form});
+  await tg("sendPhoto", {method: "POST", body: form});
 }
 
 /* ---------- áudio ---------- */
@@ -192,9 +197,12 @@ async function gravarAudio() {
         const audio = new Blob(chunks, {type: mime});
         const form = new FormData();
         form.append("chat_id", chat);
-        form.append("audio", audio, "gravacao." + ext);
+        let metodo = "sendDocument", campo = "document";
+        if (ext === "ogg") { metodo = "sendVoice"; campo = "voice"; }
+        else if (ext === "m4a") { metodo = "sendAudio"; campo = "audio"; }
+        form.append(campo, audio, "gravacao." + ext);
         $("status").innerText = "Enviando áudio...";
-        await api("/sendAudio", {method: "POST", body: form});
+        await tg(metodo, {method: "POST", body: form});
         $("status").innerText = "Áudio enviado!";
       } catch(e) {
         $("status").innerText = "Erro no áudio: " + e.message;
@@ -231,7 +239,6 @@ async function iniciarAlarme() {
 
     $("setup").style.display = "none";
     $("recordAudio").style.display = "block";
-    $("status").innerText = "Sistema iniciado.";
 
     const canvas = document.createElement("canvas");
     canvas.width = 320; canvas.height = 240;
@@ -263,18 +270,14 @@ async function iniciarAlarme() {
       prev = gray;
     }, 300);
 
-    habilitarMensagens();
+    conectar();
   } catch(e) {
     $("status").innerText = "Erro: " + e.message;
   }
 }
 
 /* ---------- eventos ---------- */
-$("connect").onclick = () => {
-  if (!readCfg()) return;
-  $("status").innerText = "Conectado. Você já pode enviar mensagens.";
-  habilitarMensagens();
-};
+$("connect").onclick = () => { if (readCfg()) conectar(); };
 $("go").onclick = iniciarAlarme;
 $("sendMessage").onclick = enviarMensagem;
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
