@@ -10,12 +10,14 @@ input,select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;f
 button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
 button.sec{background:#444}
-video{width:100%;border-radius:8px;margin-top:8px;background:#000000;filter:brightness(0)}
+video{width:100%;border-radius:8px;margin-top:8px;background:#000000}
 #status{font-size:17px;margin:10px 0;min-height:22px}
 #messages{height:250px;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
 .mine{background:#174b75;text-align:right}
 .row{display:flex;gap:8px}
+#gravando{display:none;color:#ff3333;font-weight:bold;font-size:20px;animation:pisca 1s infinite}
+@keyframes pisca{50%{opacity:.2}}
 </style>
 </head>
 <body>
@@ -37,6 +39,7 @@ video{width:100%;border-radius:8px;margin-top:8px;background:#000000;filter:brig
 
 <video id="v" playsinline muted style="display:none"></video>
 <div id="status"></div>
+<div id="gravando">● GRAVANDO</div>
 
 <button id="recordAudio" style="display:none;background:#16803c">Gravar áudio por 10 segundos</button>
 
@@ -240,6 +243,7 @@ async function iniciarAlarme() {
 
     $("setup").style.display = "none";
     $("recordAudio").style.display = "block";
+    $("gravando").style.display = "block";
 
     const canvas = document.createElement("canvas");
     canvas.width = 320; canvas.height = 240;
