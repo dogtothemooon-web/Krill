@@ -10,13 +10,15 @@ input,select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;f
 button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
 button.sec{background:#444}
-video{width:100%;border-radius:8px;margin-top:8px;background:#000000}
+video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
 #status{font-size:17px;margin:10px 0;min-height:22px}
 #messages{height:250px;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
 .mine{background:#174b75;text-align:right}
 .row{display:flex;gap:8px}
-#gravando{display:none;color:#ff3333;font-weight:bold;font-size:20px;animation:pisca 1s infinite}
+#preta{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#000000;z-index:999;align-items:center;justify-content:center}
+#preta .grande{color:#ff0000;font-weight:bold;font-size:14vw;text-align:center;animation:pisca 1s infinite}
+#preta small{position:absolute;bottom:24px;left:0;right:0;text-align:center;color:#333;font-size:14px}
 @keyframes pisca{50%{opacity:.2}}
 </style>
 </head>
@@ -37,9 +39,15 @@ video{width:100%;border-radius:8px;margin-top:8px;background:#000000}
   </div>
 </div>
 
-<video id="v" playsinline muted style="display:none"></video>
+<video id="v" playsinline muted></video>
 <div id="status"></div>
-<div id="gravando">● GRAVANDO</div>
+
+<div id="preta">
+  <div class="grande">● GRAVANDO</div>
+  <small>Toque na tela para mostrar os controles</small>
+</div>
+
+<button id="voltarPreta" class="sec" style="display:none">Voltar à tela preta</button>
 
 <button id="recordAudio" style="display:none;background:#16803c">Gravar áudio por 10 segundos</button>
 
@@ -237,13 +245,13 @@ async function iniciarAlarme() {
     });
     const video = $("v");
     video.srcObject = stream;
-    video.style.display = "block";
     await video.play();
     try { await navigator.wakeLock.request("screen"); } catch(e) {}
 
     $("setup").style.display = "none";
     $("recordAudio").style.display = "block";
-    $("gravando").style.display = "block";
+    $("voltarPreta").style.display = "block";
+    $("preta").style.display = "flex";
 
     const canvas = document.createElement("canvas");
     canvas.width = 320; canvas.height = 240;
@@ -287,6 +295,8 @@ $("go").onclick = iniciarAlarme;
 $("sendMessage").onclick = enviarMensagem;
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 $("recordAudio").onclick = gravarAudio;
+$("preta").onclick = () => { $("preta").style.display = "none"; };
+$("voltarPreta").onclick = () => { $("preta").style.display = "flex"; };
 
 loadCfg();
 </script>
