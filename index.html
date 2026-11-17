@@ -18,7 +18,8 @@ video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:
 .row{display:flex;gap:8px}
 #preta{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#000000;z-index:999;align-items:center;justify-content:center}
 #preta .grande{color:#ff0000;font-weight:bold;font-size:14vw;text-align:center;animation:pisca 1s infinite}
-#preta small{position:absolute;bottom:24px;left:0;right:0;text-align:center;color:#333;font-size:14px}
+#preta small{position:absolute;bottom:40px;left:24px;right:110px;text-align:left;color:#444;font-size:14px}
+#abrirChat{position:absolute;bottom:24px;right:24px;width:68px;height:68px;border-radius:50%;padding:0;margin:0;font-size:32px;background:#1c1c1c;border:1px solid #555}
 @keyframes pisca{50%{opacity:.2}}
 </style>
 </head>
@@ -44,7 +45,8 @@ video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:
 
 <div id="preta">
   <div class="grande">● GRAVANDO</div>
-  <small>Toque na tela para mostrar os controles</small>
+  <small>Toque no 💬 para abrir o chat</small>
+  <button id="abrirChat">💬</button>
 </div>
 
 <button id="voltarPreta" class="sec" style="display:none">Voltar à tela preta</button>
@@ -295,7 +297,7 @@ $("go").onclick = iniciarAlarme;
 $("sendMessage").onclick = enviarMensagem;
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 $("recordAudio").onclick = gravarAudio;
-$("preta").onclick = () => { $("preta").style.display = "none"; };
+$("abrirChat").onclick = () => { $("preta").style.display = "none"; };
 $("voltarPreta").onclick = () => { $("preta").style.display = "flex"; };
 
 loadCfg();
