@@ -1,25 +1,74 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Alarme de movimento</title>
+
 <style>
-body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee}
-input,select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
-button{background:#2a7de1;border:0;font-weight:bold}
-video{width:100%;border-radius:8px;margin-top:8px;background:#000}
-#status{font-size:20px;margin:10px 0}
-small{color:#999}
+body {
+  font-family:sans-serif;
+  margin:0;
+  padding:16px;
+  background:#111;
+  color:#eee;
+}
+input,select,button {
+  width:100%;
+  box-sizing:border-box;
+  padding:12px;
+  margin:6px 0;
+  font-size:16px;
+  border-radius:8px;
+  border:1px solid #444;
+  background:#222;
+  color:#eee;
+}
+button {
+  background:#2a7de1;
+  border:0;
+  font-weight:bold;
+}
+video {
+  width:100%;
+  border-radius:8px;
+  margin-top:8px;
+  background:#000;
+}
+#status {
+  font-size:17px;
+  margin:10px 0;
+}
+#messages {
+  height:250px;
+  overflow-y:auto;
+  background:#1b1b1b;
+  border:1px solid #444;
+  border-radius:8px;
+  padding:10px;
+  margin:10px 0;
+}
+.msg {
+  padding:9px;
+  margin:6px 0;
+  border-radius:8px;
+  background:#303030;
+  overflow-wrap:anywhere;
+}
+.mine {
+  background:#174b75;
+  text-align:right;
+}
+small {color:#999}
 </style>
 </head>
+
 <body>
 
 <h2>Alarme de movimento</h2>
 
 <div id="setup">
-<input id="token" placeholder="Token do bot">
+
 <input id="chat" placeholder="Chat ID" inputmode="numeric">
 
 <select id="cam">
@@ -27,235 +76,338 @@ small{color:#999}
 <option value="user">Câmera frontal</option>
 </select>
 
-<button id="go">Iniciar</button>
-<small>Token e Chat ID ficam salvos neste aparelho.</small>
+<button id="go">Iniciar sistema</button>
+
 </div>
 
 <video id="v" playsinline muted style="display:none"></video>
+
 <div id="status"></div>
 
-<button id="recordAudio" type="button"
-style="display:none;background:#16803c;">
-Gravar áudio por 10 segundos e enviar ao Telegram
+<button id="recordAudio" style="display:none;background:#16803c">
+Gravar áudio por 10 segundos
 </button>
+
+<h3>Mensagens do Telegram</h3>
+
+<div id="messages"></div>
+
+<input id="messageText" placeholder="Digite sua mensagem...">
+
+<button id="sendMessage">Enviar mensagem</button>
 
 <script>
 const $ = id => document.getElementById(id);
 
-try {
-  $('token').value = localStorage.getItem('tg_token') || '';
-  $('chat').value = localStorage.getItem('tg_chat') || '';
-} catch(e) {}
+/*
+  COLOQUE AQUI A URL DO SEU CLOUDFLARE WORKER.
+  Exemplo: https://meu-alarme.usuario.workers.dev
+*/
+const API = "COLOQUE_AQUI_A_URL_DO_WORKER";
+
+/*
+  Esta chave deve ser igual à variável APP_KEY
+  configurada no Cloudflare Worker.
+*/
+const APP_KEY = "COLOQUE_AQUI_SUA_CHAVE_DE_ACESSO";
+
+let chat = "";
+let prev = null;
+let ultimo = 0;
+let polling = false;
 
 const LIMITE = 3000;
 const INTERVALO = 10000;
-let prev = null, ultimo = 0;
 
-async function enviar(video, token, chat) {
-  const c = document.createElement('canvas');
-  c.width = video.videoWidth;
-  c.height = video.videoHeight;
-  c.getContext('2d').drawImage(video, 0, 0);
+async function api(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set("X-App-Key", APP_KEY);
 
-  const blob = await new Promise(r =>
-    c.toBlob(r, 'image/jpeg', 0.8)
-  );
+  const response = await fetch(API + path, {
+    ...options,
+    headers
+  });
 
-  const fd = new FormData();
-  fd.append('chat_id', chat);
-  fd.append('caption', 'Movimento detectado!');
-  fd.append('photo', blob, 'mov.jpg');
+  const result = await response.json();
 
-  const r = await fetch(
-    'https://api.telegram.org/bot' + token + '/sendPhoto',
-    {method:'POST', body:fd}
-  );
+  if (!response.ok || result.ok === false) {
+    throw new Error(result.error || "Erro na comunicação");
+  }
 
-  if (!r.ok) throw new Error('Telegram respondeu ' + r.status);
+  return result;
 }
 
-$('go').onclick = async () => {
-  const token = $('token').value.trim();
-  const chat = $('chat').value.trim();
+async function enviarFoto(video) {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-  if (!token || !chat) {
-    $('status').innerText = 'Preencha token e Chat ID.';
+  canvas.getContext("2d").drawImage(video, 0, 0);
+
+  const blob = await new Promise(resolve =>
+    canvas.toBlob(resolve, "image/jpeg", 0.8)
+  );
+
+  if (!blob) throw new Error("Não foi possível capturar a foto.");
+
+  const form = new FormData();
+  form.append("chat_id", chat);
+  form.append("photo", blob, "movimento.jpg");
+  form.append("caption", "Movimento detectado!");
+
+  await api("/sendPhoto", {
+    method:"POST",
+    body:form
+  });
+}
+
+async function gravarAudio() {
+  const btn = $("recordAudio");
+  let stream;
+
+  try {
+    btn.disabled = true;
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio:true
+    });
+
+    const mime = [
+      "audio/ogg;codecs=opus",
+      "audio/webm;codecs=opus",
+      "audio/webm"
+    ].find(type => MediaRecorder.isTypeSupported(type));
+
+    if (!mime) {
+      throw new Error("Gravação de áudio não suportada.");
+    }
+
+    const recorder = new MediaRecorder(stream, {
+      mimeType:mime
+    });
+
+    const chunks = [];
+
+    recorder.ondataavailable = e => {
+      if (e.data && e.data.size) chunks.push(e.data);
+    };
+
+    recorder.onstop = async () => {
+      try {
+        const audio = new Blob(chunks, {type:mime});
+
+        const form = new FormData();
+        form.append("chat_id", chat);
+        form.append("audio", audio, "gravacao.webm");
+
+        $("status").innerText = "Enviando áudio...";
+
+        await api("/sendAudio", {
+          method:"POST",
+          body:form
+        });
+
+        $("status").innerText = "Áudio enviado!";
+      } catch(e) {
+        $("status").innerText = "Erro no áudio: " + e.message;
+      } finally {
+        stream.getTracks().forEach(t => t.stop());
+        btn.disabled = false;
+        btn.innerText = "Gravar áudio por 10 segundos";
+      }
+    };
+
+    recorder.start();
+
+    btn.innerText = "Gravando...";
+
+    $("status").innerText =
+      "Microfone ativo. Gravando por 10 segundos.";
+
+    setTimeout(() => {
+      if (recorder.state === "recording") recorder.stop();
+    }, 10000);
+
+  } catch(e) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+
+    $("status").innerText = e.message;
+    btn.disabled = false;
+    btn.innerText = "Gravar áudio por 10 segundos";
+  }
+}
+
+async function enviarMensagem() {
+  const input = $("messageText");
+  const text = input.value.trim();
+
+  if (!text) return;
+
+  try {
+    $("sendMessage").disabled = true;
+
+    await api("/sendMessage", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        chat_id:chat,
+        text
+      })
+    });
+
+    input.value = "";
+    $("status").innerText = "Mensagem enviada ao Telegram.";
+
+    carregarMensagens();
+
+  } catch(e) {
+    $("status").innerText = "Erro: " + e.message;
+  } finally {
+    $("sendMessage").disabled = false;
+  }
+}
+
+function mostrarMensagens(messages) {
+  const box = $("messages");
+  box.innerHTML = "";
+
+  messages.forEach(m => {
+    const div = document.createElement("div");
+    div.className = "msg";
+
+    const hora = new Date(m.date * 1000)
+      .toLocaleTimeString("pt-BR", {
+        hour:"2-digit",
+        minute:"2-digit"
+      });
+
+    div.textContent = hora + " — " + m.text;
+    box.appendChild(div);
+  });
+
+  box.scrollTop = box.scrollHeight;
+}
+
+async function carregarMensagens() {
+  if (polling || !chat) return;
+
+  polling = true;
+
+  try {
+    const result = await api(
+      "/messages?chat_id=" + encodeURIComponent(chat)
+    );
+
+    mostrarMensagens(result.messages || []);
+  } catch(e) {
+    $("status").innerText = "Erro nas mensagens: " + e.message;
+  } finally {
+    polling = false;
+  }
+}
+
+$("sendMessage").onclick = enviarMensagem;
+
+$("messageText").addEventListener("keydown", e => {
+  if (e.key === "Enter") enviarMensagem();
+});
+
+$("recordAudio").onclick = gravarAudio;
+
+$("go").onclick = async () => {
+  chat = $("chat").value.trim();
+
+  if (!chat) {
+    $("status").innerText = "Informe o Chat ID.";
     return;
   }
 
   try {
-    localStorage.setItem('tg_token', token);
-    localStorage.setItem('tg_chat', chat);
-  } catch(e) {}
-
-  try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: {facingMode: $('cam').value}
+      video:{facingMode:$("cam").value}
     });
 
-    const v = $('v');
-    v.srcObject = stream;
-    v.style.display = 'block';
-    await v.play();
+    const video = $("v");
+    video.srcObject = stream;
+    video.style.display = "block";
+
+    await video.play();
 
     try {
-      await navigator.wakeLock.request('screen');
+      await navigator.wakeLock.request("screen");
     } catch(e) {}
 
-    $('setup').style.display = 'none';
-    $('recordAudio').style.display = 'block';
-    $('status').innerText = 'Sistema iniciado.';
+    $("setup").style.display = "none";
+    $("recordAudio").style.display = "block";
 
-    // GRAVAÇÃO DE ÁUDIO MANUAL
-    $('recordAudio').onclick = async () => {
-      const btn = $('recordAudio');
-      btn.disabled = true;
-      btn.innerText = 'Solicitando permissão...';
+    $("status").innerText = "Sistema iniciado.";
 
-      let audioStream;
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 240;
 
-      try {
-        audioStream = await navigator.mediaDevices.getUserMedia({
-          audio: true
-        });
-
-        const mime = MediaRecorder.isTypeSupported(
-          'audio/webm;codecs=opus'
-        ) ? 'audio/webm;codecs=opus' : 'audio/webm';
-
-        const recorder = new MediaRecorder(
-          audioStream, {mimeType:mime}
-        );
-
-        const chunks = [];
-
-        recorder.ondataavailable = e => {
-          if (e.data && e.data.size) chunks.push(e.data);
-        };
-
-        recorder.onstop = async () => {
-          try {
-            const audioBlob = new Blob(chunks, {
-              type: recorder.mimeType || 'audio/webm'
-            });
-
-            if (!audioBlob.size) {
-              throw new Error('Gravação vazia.');
-            }
-
-            const form = new FormData();
-            form.append('chat_id', chat);
-            form.append('caption', 'Gravação de áudio de 10 segundos.');
-            form.append('document', audioBlob, 'gravacao.webm');
-
-            $('status').innerText = 'Enviando áudio...';
-
-            const response = await fetch(
-              'https://api.telegram.org/bot' +
-              token + '/sendDocument',
-              {method:'POST', body:form}
-            );
-
-            const result = await response.json();
-
-            if (!response.ok || !result.ok) {
-              throw new Error(
-                result.description || 'Erro no Telegram'
-              );
-            }
-
-            $('status').innerText = 'Áudio enviado ao Telegram!';
-
-          } catch(error) {
-            $('status').innerText = 'Erro: ' + error.message;
-          } finally {
-            if (audioStream) {
-              audioStream.getTracks().forEach(t => t.stop());
-            }
-
-            btn.disabled = false;
-            btn.innerText =
-              'Gravar áudio por 10 segundos e enviar ao Telegram';
-          }
-        };
-
-        recorder.start();
-
-        btn.innerText = 'Gravando... 10 segundos';
-        $('status').innerText =
-          'Microfone ativo. Gravação em andamento.';
-
-        setTimeout(() => {
-          if (recorder.state === 'recording') {
-            recorder.stop();
-          }
-        }, 10000);
-
-      } catch(error) {
-        if (audioStream) {
-          audioStream.getTracks().forEach(t => t.stop());
-        }
-
-        $('status').innerText =
-          'Erro no microfone: ' + error.message;
-
-        btn.disabled = false;
-        btn.innerText =
-          'Gravar áudio por 10 segundos e enviar ao Telegram';
-      }
-    };
-
-    // DETECÇÃO DE MOVIMENTO
-    const cv = document.createElement('canvas');
-    cv.width = 320;
-    cv.height = 240;
-
-    const ctx = cv.getContext('2d', {
+    const ctx = canvas.getContext("2d", {
       willReadFrequently:true
     });
 
-    ctx.filter = 'blur(3px)';
+    ctx.filter = "blur(3px)";
 
     setInterval(async () => {
-      ctx.drawImage(v, 0, 0, 320, 240);
+      if (video.readyState < 2) return;
 
-      const d = ctx.getImageData(0, 0, 320, 240).data;
-      const g = new Uint8Array(320 * 240);
+      ctx.drawImage(video, 0, 0, 320, 240);
 
-      for (let i = 0; i < g.length; i++) {
-        g[i] = (d[i*4] + d[i*4+1] + d[i*4+2]) / 3;
+      const d = ctx.getImageData(
+        0, 0, 320, 240
+      ).data;
+
+      const gray = new Uint8Array(320 * 240);
+
+      for (let i = 0; i < gray.length; i++) {
+        gray[i] = (
+          d[i*4] + d[i*4+1] + d[i*4+2]
+        ) / 3;
       }
 
       if (prev) {
         let area = 0;
 
-        for (let i = 0; i < g.length; i++) {
-          if (Math.abs(g[i] - prev[i]) > 25) area++;
+        for (let i = 0; i < gray.length; i++) {
+          if (Math.abs(gray[i] - prev[i]) > 25) {
+            area++;
+          }
         }
 
-        const mov = area > LIMITE;
+        const movimento = area > LIMITE;
 
-        $('status').innerText = mov
-          ? 'MOVIMENTO! (' + area + ')'
-          : 'Sem movimento (' + area + ')';
+        $("status").innerText = movimento
+          ? "MOVIMENTO! (" + area + ")"
+          : "Sem movimento (" + area + ")";
 
-        if (mov && Date.now() - ultimo > INTERVALO) {
+        if (
+          movimento &&
+          Date.now() - ultimo > INTERVALO
+        ) {
           ultimo = Date.now();
 
           try {
-            await enviar(v, token, chat);
+            await enviarFoto(video);
           } catch(e) {
-            $('status').innerText =
-              'Erro ao enviar foto: ' + e.message;
+            $("status").innerText =
+              "Erro ao enviar foto: " + e.message;
           }
         }
       }
 
-      prev = g;
+      prev = gray;
+
     }, 300);
 
+    carregarMensagens();
+    setInterval(carregarMensagens, 3000);
+
   } catch(e) {
-    $('status').innerText = 'Erro: ' + e.message;
+    $("status").innerText = "Erro: " + e.message;
   }
 };
 </script>
