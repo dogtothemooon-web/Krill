@@ -4,262 +4,126 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Alarme de movimento</title>
-
 <style>
-body {
-  font-family:sans-serif;
-  margin:0;
-  padding:16px;
-  background:#111;
-  color:#eee;
-}
-input,select,button {
-  width:100%;
-  box-sizing:border-box;
-  padding:12px;
-  margin:6px 0;
-  font-size:16px;
-  border-radius:8px;
-  border:1px solid #444;
-  background:#222;
-  color:#eee;
-}
-button {
-  background:#2a7de1;
-  border:0;
-  font-weight:bold;
-}
-video {
-  width:100%;
-  border-radius:8px;
-  margin-top:8px;
-  background:#000;
-}
-#status {
-  font-size:17px;
-  margin:10px 0;
-}
-#messages {
-  height:250px;
-  overflow-y:auto;
-  background:#1b1b1b;
-  border:1px solid #444;
-  border-radius:8px;
-  padding:10px;
-  margin:10px 0;
-}
-.msg {
-  padding:9px;
-  margin:6px 0;
-  border-radius:8px;
-  background:#303030;
-  overflow-wrap:anywhere;
-}
-.mine {
-  background:#174b75;
-  text-align:right;
-}
-small {color:#999}
+body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee}
+input,select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
+button{background:#2a7de1;border:0;font-weight:bold}
+button:disabled{opacity:.5}
+button.sec{background:#444}
+video{width:100%;border-radius:8px;margin-top:8px;background:#000}
+#status{font-size:17px;margin:10px 0;min-height:22px}
+#messages{height:250px;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0}
+.msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
+.mine{background:#174b75;text-align:right}
+.row{display:flex;gap:8px}
 </style>
 </head>
-
 <body>
 
 <h2>Alarme de movimento</h2>
 
 <div id="setup">
-
-<input id="chat" placeholder="Chat ID" inputmode="numeric">
-
-<select id="cam">
-<option value="environment">Câmera traseira</option>
-<option value="user">Câmera frontal</option>
-</select>
-
-<button id="go">Iniciar sistema</button>
-
+  <input id="api" placeholder="URL do Worker (https://...workers.dev)" inputmode="url" autocapitalize="off">
+  <input id="key" type="password" placeholder="Chave de acesso (APP_KEY)" autocomplete="off">
+  <input id="chat" placeholder="Chat ID" inputmode="numeric">
+  <select id="cam">
+    <option value="environment">Câmera traseira</option>
+    <option value="user">Câmera frontal</option>
+  </select>
+  <div class="row">
+    <button id="connect" class="sec">Só mensagens</button>
+    <button id="go">Iniciar alarme</button>
+  </div>
 </div>
 
 <video id="v" playsinline muted style="display:none"></video>
-
 <div id="status"></div>
 
-<button id="recordAudio" style="display:none;background:#16803c">
-Gravar áudio por 10 segundos
-</button>
+<button id="recordAudio" style="display:none;background:#16803c">Gravar áudio por 10 segundos</button>
 
 <h3>Mensagens do Telegram</h3>
-
 <div id="messages"></div>
 
-<input id="messageText" placeholder="Digite sua mensagem...">
-
-<button id="sendMessage">Enviar mensagem</button>
+<div class="row">
+  <input id="messageText" placeholder="Digite sua mensagem..." disabled>
+  <button id="sendMessage" style="width:auto" disabled>Enviar</button>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
 
-/*
-  COLOQUE AQUI A URL DO SEU CLOUDFLARE WORKER.
-  Exemplo: https://meu-alarme.usuario.workers.dev
-*/
-const API = "COLOQUE_AQUI_A_URL_DO_WORKER";
-
-/*
-  Esta chave deve ser igual à variável APP_KEY
-  configurada no Cloudflare Worker.
-*/
-const APP_KEY = "COLOQUE_AQUI_SUA_CHAVE_DE_ACESSO";
-
-let chat = "";
-let prev = null;
-let ultimo = 0;
-let polling = false;
+let API = "", APP_KEY = "", chat = "";
+let prev = null, ultimo = 0, polling = false, pollTimer = null, alarmTimer = null;
 
 const LIMITE = 3000;
 const INTERVALO = 10000;
 
+/* ---------- configuração salva só neste aparelho ---------- */
+function loadCfg() {
+  try {
+    const c = JSON.parse(localStorage.getItem("alarme_cfg") || "{}");
+    $("api").value = c.api || "";
+    $("key").value = c.key || "";
+    $("chat").value = c.chat || "";
+  } catch(e) {}
+}
+function saveCfg() {
+  try {
+    localStorage.setItem("alarme_cfg", JSON.stringify({api: API, key: APP_KEY, chat}));
+  } catch(e) {}
+}
+function readCfg() {
+  API = $("api").value.trim().replace(/\/+$/, "");
+  APP_KEY = $("key").value.trim();
+  chat = $("chat").value.trim();
+  if (!API || !APP_KEY || !chat) {
+    $("status").innerText = "Preencha URL do Worker, chave e Chat ID.";
+    return false;
+  }
+  if (!/^https:\/\//.test(API)) {
+    $("status").innerText = "A URL do Worker deve começar com https://";
+    return false;
+  }
+  saveCfg();
+  return true;
+}
+
+/* ---------- API ---------- */
 async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set("X-App-Key", APP_KEY);
-
-  const response = await fetch(API + path, {
-    ...options,
-    headers
-  });
-
-  const result = await response.json();
-
+  const response = await fetch(API + path, {...options, headers});
+  let result = {};
+  try { result = await response.json(); } catch(e) {}
   if (!response.ok || result.ok === false) {
-    throw new Error(result.error || "Erro na comunicação");
+    throw new Error(result.error || result.description || "Erro na comunicação (" + response.status + ")");
   }
-
   return result;
 }
 
-async function enviarFoto(video) {
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-
-  canvas.getContext("2d").drawImage(video, 0, 0);
-
-  const blob = await new Promise(resolve =>
-    canvas.toBlob(resolve, "image/jpeg", 0.8)
-  );
-
-  if (!blob) throw new Error("Não foi possível capturar a foto.");
-
-  const form = new FormData();
-  form.append("chat_id", chat);
-  form.append("photo", blob, "movimento.jpg");
-  form.append("caption", "Movimento detectado!");
-
-  await api("/sendPhoto", {
-    method:"POST",
-    body:form
-  });
-}
-
-async function gravarAudio() {
-  const btn = $("recordAudio");
-  let stream;
-
-  try {
-    btn.disabled = true;
-
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio:true
-    });
-
-    const mime = [
-      "audio/ogg;codecs=opus",
-      "audio/webm;codecs=opus",
-      "audio/webm"
-    ].find(type => MediaRecorder.isTypeSupported(type));
-
-    if (!mime) {
-      throw new Error("Gravação de áudio não suportada.");
-    }
-
-    const recorder = new MediaRecorder(stream, {
-      mimeType:mime
-    });
-
-    const chunks = [];
-
-    recorder.ondataavailable = e => {
-      if (e.data && e.data.size) chunks.push(e.data);
-    };
-
-    recorder.onstop = async () => {
-      try {
-        const audio = new Blob(chunks, {type:mime});
-
-        const form = new FormData();
-        form.append("chat_id", chat);
-        form.append("audio", audio, "gravacao.webm");
-
-        $("status").innerText = "Enviando áudio...";
-
-        await api("/sendAudio", {
-          method:"POST",
-          body:form
-        });
-
-        $("status").innerText = "Áudio enviado!";
-      } catch(e) {
-        $("status").innerText = "Erro no áudio: " + e.message;
-      } finally {
-        stream.getTracks().forEach(t => t.stop());
-        btn.disabled = false;
-        btn.innerText = "Gravar áudio por 10 segundos";
-      }
-    };
-
-    recorder.start();
-
-    btn.innerText = "Gravando...";
-
-    $("status").innerText =
-      "Microfone ativo. Gravando por 10 segundos.";
-
-    setTimeout(() => {
-      if (recorder.state === "recording") recorder.stop();
-    }, 10000);
-
-  } catch(e) {
-    if (stream) stream.getTracks().forEach(t => t.stop());
-
-    $("status").innerText = e.message;
-    btn.disabled = false;
-    btn.innerText = "Gravar áudio por 10 segundos";
-  }
+/* ---------- mensagens ---------- */
+function habilitarMensagens() {
+  $("messageText").disabled = false;
+  $("sendMessage").disabled = false;
+  carregarMensagens();
+  clearInterval(pollTimer);
+  pollTimer = setInterval(carregarMensagens, 3000);
 }
 
 async function enviarMensagem() {
   const input = $("messageText");
   const text = input.value.trim();
-
-  if (!text) return;
-
+  if (!text || !chat) return;
   try {
     $("sendMessage").disabled = true;
-
     await api("/sendMessage", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        chat_id:chat,
-        text
-      })
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({chat_id: chat, text})
     });
-
     input.value = "";
     $("status").innerText = "Mensagem enviada ao Telegram.";
-
     carregarMensagens();
-
   } catch(e) {
     $("status").innerText = "Erro: " + e.message;
   } finally {
@@ -269,35 +133,23 @@ async function enviarMensagem() {
 
 function mostrarMensagens(messages) {
   const box = $("messages");
+  const noFim = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.innerHTML = "";
-
   messages.forEach(m => {
     const div = document.createElement("div");
-    div.className = "msg";
-
-    const hora = new Date(m.date * 1000)
-      .toLocaleTimeString("pt-BR", {
-        hour:"2-digit",
-        minute:"2-digit"
-      });
-
-    div.textContent = hora + " — " + m.text;
+    div.className = "msg" + (m.from_me || m.out ? " mine" : "");
+    const hora = new Date(m.date * 1000).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
+    div.textContent = hora + " — " + (m.text || "");
     box.appendChild(div);
   });
-
-  box.scrollTop = box.scrollHeight;
+  if (noFim) box.scrollTop = box.scrollHeight;
 }
 
 async function carregarMensagens() {
   if (polling || !chat) return;
-
   polling = true;
-
   try {
-    const result = await api(
-      "/messages?chat_id=" + encodeURIComponent(chat)
-    );
-
+    const result = await api("/messages?chat_id=" + encodeURIComponent(chat));
     mostrarMensagens(result.messages || []);
   } catch(e) {
     $("status").innerText = "Erro nas mensagens: " + e.message;
@@ -306,110 +158,129 @@ async function carregarMensagens() {
   }
 }
 
-$("sendMessage").onclick = enviarMensagem;
+/* ---------- foto ---------- */
+async function enviarFoto(video) {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.8));
+  if (!blob) throw new Error("Não foi possível capturar a foto.");
+  const form = new FormData();
+  form.append("chat_id", chat);
+  form.append("photo", blob, "movimento.jpg");
+  form.append("caption", "Movimento detectado!");
+  await api("/sendPhoto", {method: "POST", body: form});
+}
 
-$("messageText").addEventListener("keydown", e => {
-  if (e.key === "Enter") enviarMensagem();
-});
-
-$("recordAudio").onclick = gravarAudio;
-
-$("go").onclick = async () => {
-  chat = $("chat").value.trim();
-
-  if (!chat) {
-    $("status").innerText = "Informe o Chat ID.";
-    return;
+/* ---------- áudio ---------- */
+async function gravarAudio() {
+  const btn = $("recordAudio");
+  let stream;
+  try {
+    btn.disabled = true;
+    stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const mime = ["audio/ogg;codecs=opus","audio/webm;codecs=opus","audio/webm","audio/mp4"]
+      .find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+    if (!mime) throw new Error("Gravação de áudio não suportada neste navegador.");
+    const ext = mime.includes("ogg") ? "ogg" : mime.includes("mp4") ? "m4a" : "webm";
+    const recorder = new MediaRecorder(stream, {mimeType: mime});
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = async () => {
+      try {
+        const audio = new Blob(chunks, {type: mime});
+        const form = new FormData();
+        form.append("chat_id", chat);
+        form.append("audio", audio, "gravacao." + ext);
+        $("status").innerText = "Enviando áudio...";
+        await api("/sendAudio", {method: "POST", body: form});
+        $("status").innerText = "Áudio enviado!";
+      } catch(e) {
+        $("status").innerText = "Erro no áudio: " + e.message;
+      } finally {
+        stream.getTracks().forEach(t => t.stop());
+        btn.disabled = false;
+        btn.innerText = "Gravar áudio por 10 segundos";
+      }
+    };
+    recorder.start();
+    btn.innerText = "Gravando...";
+    $("status").innerText = "Microfone ativo. Gravando por 10 segundos.";
+    setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, 10000);
+  } catch(e) {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    $("status").innerText = e.message;
+    btn.disabled = false;
+    btn.innerText = "Gravar áudio por 10 segundos";
   }
+}
 
+/* ---------- alarme ---------- */
+async function iniciarAlarme() {
+  if (!readCfg()) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:$("cam").value}
+      video: {facingMode: $("cam").value}
     });
-
     const video = $("v");
     video.srcObject = stream;
     video.style.display = "block";
-
     await video.play();
-
-    try {
-      await navigator.wakeLock.request("screen");
-    } catch(e) {}
+    try { await navigator.wakeLock.request("screen"); } catch(e) {}
 
     $("setup").style.display = "none";
     $("recordAudio").style.display = "block";
-
     $("status").innerText = "Sistema iniciado.";
 
     const canvas = document.createElement("canvas");
-    canvas.width = 320;
-    canvas.height = 240;
-
-    const ctx = canvas.getContext("2d", {
-      willReadFrequently:true
-    });
-
+    canvas.width = 320; canvas.height = 240;
+    const ctx = canvas.getContext("2d", {willReadFrequently: true});
     ctx.filter = "blur(3px)";
 
-    setInterval(async () => {
+    clearInterval(alarmTimer);
+    alarmTimer = setInterval(async () => {
       if (video.readyState < 2) return;
-
       ctx.drawImage(video, 0, 0, 320, 240);
-
-      const d = ctx.getImageData(
-        0, 0, 320, 240
-      ).data;
-
+      const d = ctx.getImageData(0, 0, 320, 240).data;
       const gray = new Uint8Array(320 * 240);
-
       for (let i = 0; i < gray.length; i++) {
-        gray[i] = (
-          d[i*4] + d[i*4+1] + d[i*4+2]
-        ) / 3;
+        gray[i] = (d[i*4] + d[i*4+1] + d[i*4+2]) / 3;
       }
-
       if (prev) {
         let area = 0;
-
         for (let i = 0; i < gray.length; i++) {
-          if (Math.abs(gray[i] - prev[i]) > 25) {
-            area++;
-          }
+          if (Math.abs(gray[i] - prev[i]) > 25) area++;
         }
-
         const movimento = area > LIMITE;
-
-        $("status").innerText = movimento
-          ? "MOVIMENTO! (" + area + ")"
-          : "Sem movimento (" + area + ")";
-
-        if (
-          movimento &&
-          Date.now() - ultimo > INTERVALO
-        ) {
+        $("status").innerText = movimento ? "MOVIMENTO! (" + area + ")" : "Sem movimento (" + area + ")";
+        if (movimento && Date.now() - ultimo > INTERVALO) {
           ultimo = Date.now();
-
-          try {
-            await enviarFoto(video);
-          } catch(e) {
-            $("status").innerText =
-              "Erro ao enviar foto: " + e.message;
-          }
+          try { await enviarFoto(video); }
+          catch(e) { $("status").innerText = "Erro ao enviar foto: " + e.message; }
         }
       }
-
       prev = gray;
-
     }, 300);
 
-    carregarMensagens();
-    setInterval(carregarMensagens, 3000);
-
+    habilitarMensagens();
   } catch(e) {
     $("status").innerText = "Erro: " + e.message;
   }
+}
+
+/* ---------- eventos ---------- */
+$("connect").onclick = () => {
+  if (!readCfg()) return;
+  $("status").innerText = "Conectado. Você já pode enviar mensagens.";
+  habilitarMensagens();
 };
+$("go").onclick = iniciarAlarme;
+$("sendMessage").onclick = enviarMensagem;
+$("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
+$("recordAudio").onclick = gravarAudio;
+
+loadCfg();
 </script>
 </body>
 </html>
