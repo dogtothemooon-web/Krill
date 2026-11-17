@@ -54,6 +54,7 @@ const $ = id => document.getElementById(id);
 let TOKEN = "", chat = "";
 let prev = null, ultimo = 0, polling = false, pollTimer = null, alarmTimer = null;
 let enviadas = [];
+const INICIO = Math.floor(Date.now() / 1000) - 5;
 
 const LIMITE = 3000;
 const INTERVALO = 10000;
@@ -152,7 +153,7 @@ async function carregarMensagens() {
     const d = await tg("getUpdates?limit=100");
     const recebidas = d.result
       .map(u => u.message)
-      .filter(m => m && m.text && String(m.chat.id) === chat)
+      .filter(m => m && m.text && String(m.chat.id) === chat && m.date >= INICIO)
       .map(m => ({date: m.date, text: m.text, mine: false}));
     const tudo = recebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
     mostrarMensagens(tudo);
