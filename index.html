@@ -21,6 +21,20 @@ video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:
 .row{display:flex;gap:8px}
 </style>
 </head>
+<script>
+function falar(texto) {
+  const fala = new SpeechSynthesisUtterance(texto);
+  fala.lang = "pt-BR";
+  fala.rate = 0.9;
+  fala.pitch = 0.7;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(fala);
+}
+
+document.getElementById("telaPreta").addEventListener("click", function () {
+  falar("Seja bem vindo");
+});
+</script>
 <body>
 
 <h2>Alarme de movimento</h2>
