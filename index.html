@@ -11,7 +11,8 @@ button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
 button.sec{background:#444}
 video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
-#telaPreta{display:none;width:100%;aspect-ratio:3/4;background:#000000;border-radius:8px;margin-top:8px;align-items:center;justify-content:center}
+#telaPreta{display:none;width:100%;aspect-ratio:3/4;background:#000000;border-radius:8px;margin-top:8px;align-items:center;justify-content:center;overflow:hidden}
+#telaPreta img{max-width:100%;max-height:100%;object-fit:contain}
 #telaPreta span{color:#ff0000;font-weight:bold;font-size:11vw;text-align:center;animation:pisca 1s infinite}
 @keyframes pisca{50%{opacity:.2}}
 #status{font-size:17px;margin:10px 0;min-height:22px}
@@ -21,20 +22,6 @@ video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:
 .row{display:flex;gap:8px}
 </style>
 </head>
-<script>
-function falar(texto) {
-  const fala = new SpeechSynthesisUtterance(texto);
-  fala.lang = "pt-BR";
-  fala.rate = 0.9;
-  fala.pitch = 0.7;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(fala);
-}
-
-document.getElementById("telaPreta").addEventListener("click", function () {
-  falar("Seja bem vindo");
-});
-</script>
 <body>
 
 <h2>Alarme de movimento</h2>
@@ -75,6 +62,18 @@ const INICIO = Math.floor(Date.now() / 1000) - 5;
 
 const LIMITE = 3000;
 const INTERVALO = 10000;
+
+/* ---------- voz da esfera ---------- */
+function falar(texto) {
+  try {
+    const fala = new SpeechSynthesisUtterance(texto);
+    fala.lang = "pt-BR";
+    fala.rate = 0.9;
+    fala.pitch = 0.7;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(fala);
+  } catch(e) {}
+}
 
 /* ---------- configuração salva só neste aparelho ---------- */
 function loadCfg() {
@@ -245,6 +244,7 @@ async function gravarAudio() {
 /* ---------- alarme ---------- */
 async function iniciarAlarme() {
   if (!readCfg()) return;
+  falar("Seja bem vindo");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {facingMode: $("cam").value}
@@ -300,6 +300,7 @@ $("go").onclick = iniciarAlarme;
 $("sendMessage").onclick = enviarMensagem;
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 $("recordAudio").onclick = gravarAudio;
+$("telaPreta").addEventListener("click", () => falar("Seja bem vindo"));
 
 loadCfg();
 </script>
