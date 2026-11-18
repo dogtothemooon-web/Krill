@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Esfera viva v3</title>
+<title>Esfera viva v4</title>
 <style>
 body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:16px}
 #palco{position:relative;width:100%;height:50vh;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;perspective:800px;touch-action:none}
@@ -14,7 +14,7 @@ body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:16px}
 #aparece.on{opacity:1;transform:scale(1);filter:blur(0)}
 #flut{position:relative;animation:bob 2.6s ease-in-out infinite}
 @keyframes bob{50%{transform:translateY(-14px)}}
-#corpo{display:block;width:100%;height:100%;border-radius:22%;box-shadow:0 0 0 5px #111,0 0 28px 6px rgba(80,255,120,.55)}
+#corpo{display:block;width:100%;height:100%;border-radius:18%;box-shadow:0 0 0 4px #111,0 0 30px 6px rgba(80,255,120,.5)}
 #rosto{position:absolute;inset:0;width:100%;height:100%}
 .olho{transform-box:fill-box;transform-origin:center}
 #cam{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
@@ -28,10 +28,12 @@ select,input{background:#222;border:1px solid #444;font-weight:normal}
 #ouvi{font-size:17px;min-height:24px;color:#9ec9ff;margin:4px 0}
 .row{display:flex;gap:8px}
 .row button{width:auto}
+.rapidas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.rapidas button{background:#333;font-size:15px;margin:0;padding:10px}
 </style>
 </head>
 <body>
-<h2>Esfera viva v3</h2>
+<h2>Esfera viva v4</h2>
 <div id="palco">
   <img id="esfera" src="esfera.gif" alt="esfera">
   <div id="personagem">
@@ -57,6 +59,16 @@ select,input{background:#222;border:1px solid #444;font-weight:normal}
   <option value="user">Câmera frontal</option>
 </select>
 <button id="iniciar">Ligar câmera</button>
+
+<div class="rapidas">
+  <button data-f="oi">👋 Oi</button>
+  <button data-f="quem e voce">🤖 Quem é você?</button>
+  <button data-f="o que voce ve">👁️ O que você vê?</button>
+  <button data-f="como voce esta">🙂 Como você está?</button>
+  <button data-f="que horas sao">🕒 Que horas são?</button>
+  <button data-f="conte uma piada">😄 Piada</button>
+</div>
+
 <button id="bOuvir">Conversar por voz</button>
 <div class="row">
   <input id="texto" placeholder="Ou digite aqui para conversar...">
@@ -74,13 +86,19 @@ let model, voz = true, atual = "", visto = 0, ultimoDesenho = 0, ocupado = false
 let trancadoAte = 0;
 const TEMPO_FIXO = 20000; /* 20 segundos como o objeto */
 
-const NOMES = {person:"pessoa", bicycle:"bicicleta", car:"carro", motorcycle:"moto", bus:"ônibus", truck:"caminhão",
-  bird:"pássaro", cat:"gato", dog:"cachorro", horse:"cavalo", backpack:"mochila", umbrella:"guarda-chuva",
-  handbag:"bolsa", bottle:"garrafa", "wine glass":"taça", cup:"copo", fork:"garfo", knife:"faca", spoon:"colher",
-  bowl:"tigela", banana:"banana", apple:"maçã", orange:"laranja", pizza:"pizza", cake:"bolo", chair:"cadeira",
-  couch:"sofá", "potted plant":"planta", bed:"cama", "dining table":"mesa", tv:"televisão", laptop:"notebook",
-  mouse:"mouse", remote:"controle remoto", keyboard:"teclado", "cell phone":"celular", book:"livro",
-  clock:"relógio", vase:"vaso", scissors:"tesoura", "teddy bear":"urso de pelúcia", toothbrush:"escova de dente"};
+const NOMES = {person:"pessoa",bicycle:"bicicleta",car:"carro",motorcycle:"moto",airplane:"avião",bus:"ônibus",train:"trem",
+  truck:"caminhão",boat:"barco","traffic light":"semáforo","fire hydrant":"hidrante","stop sign":"placa de pare",
+  "parking meter":"parquímetro",bench:"banco",bird:"pássaro",cat:"gato",dog:"cachorro",horse:"cavalo",sheep:"ovelha",
+  cow:"vaca",elephant:"elefante",bear:"urso",zebra:"zebra",giraffe:"girafa",backpack:"mochila",umbrella:"guarda-chuva",
+  handbag:"bolsa",tie:"gravata",suitcase:"mala",frisbee:"frisbee",skis:"esquis",snowboard:"snowboard","sports ball":"bola",
+  kite:"pipa","baseball bat":"taco","baseball glove":"luva","skateboard":"skate",surfboard:"prancha",
+  "tennis racket":"raquete",bottle:"garrafa","wine glass":"taça",cup:"copo",fork:"garfo",knife:"faca",spoon:"colher",
+  bowl:"tigela",banana:"banana",apple:"maçã",sandwich:"sanduíche",orange:"laranja",broccoli:"brócolis",carrot:"cenoura",
+  "hot dog":"cachorro quente",pizza:"pizza",donut:"rosquinha",cake:"bolo",chair:"cadeira",couch:"sofá",
+  "potted plant":"planta",bed:"cama","dining table":"mesa",toilet:"vaso sanitário",tv:"televisão",laptop:"notebook",
+  mouse:"mouse",remote:"controle remoto",keyboard:"teclado","cell phone":"celular",microwave:"micro-ondas",oven:"forno",
+  toaster:"torradeira",sink:"pia",refrigerator:"geladeira",book:"livro",clock:"relógio",vase:"vaso",scissors:"tesoura",
+  "teddy bear":"urso de pelúcia","hair drier":"secador de cabelo",toothbrush:"escova de dente"};
 
 const frases = n => ["Eu sou " + n + "!", "Olá humano. Agora eu sou " + n,
   "Gostou do meu visual de " + n + "?", "Me mostre outra coisa", "Eu estou vivo!"];
@@ -103,7 +121,6 @@ function falar(t) {
   const id = ++idFala;
   falando = true;
   clearTimeout(timerFala);
-  /* segurança: nunca fica "falando" preso */
   timerFala = setTimeout(() => fimFala(id), Math.max(2500, t.length * 120) + 3000);
   if (!voz) { setTimeout(() => fimFala(id), 1500); return; }
   try {
@@ -121,7 +138,7 @@ $("bVoz").onclick = () => {
   if (!voz) speechSynthesis.cancel();
 };
 
-/* ---------- conversa por voz ---------- */
+/* ---------- conversa ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, querOuvir = false, ouvindo = false;
 
@@ -140,10 +157,10 @@ function responder(texto) {
   else if (tem(t, ["o que voce e", "o que e voce", "voce e o que"])) r = "Agora eu sou " + sou + ". Mostre outra coisa e eu mudo";
   else if (tem(t, ["como voce esta", "tudo bem", "como vai"])) r = sorteio(["Estou funcionando perfeitamente", "Estou muito bem, humano", "Meus sensores estão ótimos"]);
   else if (tem(t, ["ola", "oi", "bom dia", "boa tarde", "boa noite", "e ai"])) r = sorteio(["Olá humano. Eu sou " + sou, "Oi! Seja bem vindo", "Olá. Eu estava esperando você"]);
-  else if (tem(t, ["horas", "que horas"])) r = "Agora são " + new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
+  else if (tem(t, ["horas"])) r = "Agora são " + new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
   else if (tem(t, ["que dia", "data de hoje"])) r = "Hoje é " + new Date().toLocaleDateString("pt-BR", {weekday: "long", day: "numeric", month: "long"});
   else if (tem(t, ["piada"])) r = sorteio(["Por que o computador foi ao médico? Porque estava com vírus", "O que o zero disse para o oito? Belo cinto", "Eu contaria uma piada sobre rede, mas ela não pega"]);
-  else if (tem(t, ["o que voce ve", "o que esta vendo", "o que voce esta vendo"])) r = nome ? "Eu vejo um " + nome : "Não vejo nada. Me mostre um objeto";
+  else if (tem(t, ["o que voce ve", "o que esta vendo", "o que voce esta vendo"])) r = nome ? "Eu vejo " + nome : "Não vejo nada. Me mostre um objeto";
   else if (tem(t, ["obrigado", "valeu"])) r = "De nada, humano";
   else if (tem(t, ["quem te criou", "quem te fez"])) r = "Fui criado por um humano muito criativo";
   else if (tem(t, ["voce esta vivo", "voce e vivo", "voce e real"])) r = "Eu acho que sim. Você me ouve, então eu existo";
@@ -153,6 +170,14 @@ function responder(texto) {
   else r = sorteio(["Interessante. Fale mais", "Não entendi bem, mas estou ouvindo", "Hmm. Pode repetir, humano?", "Eu estou processando isso"]);
   setTimeout(() => falar(r), 200);
 }
+
+/* botões de fala rápida */
+document.querySelectorAll(".rapidas button").forEach(b => {
+  b.onclick = () => {
+    $("ouvi").innerText = "Você: " + b.innerText;
+    responder(b.dataset.f);
+  };
+});
 
 function abrirOuvir() {
   if (!rec || !querOuvir || ouvindo || falando) return;
@@ -192,14 +217,14 @@ function criarRec() {
       querOuvir = false;
       $("bOuvir").classList.remove("on");
       $("bOuvir").innerText = "Conversar por voz";
-      $("ouvi").innerText = "Microfone bloqueado. Libere nas permissões do site (cadeado → Permissões → Microfone).";
+      $("ouvi").innerText = "Microfone bloqueado. Libere nas permissões do site.";
       return;
     }
     if (e.error === "network") {
       querOuvir = false;
       $("bOuvir").classList.remove("on");
       $("bOuvir").innerText = "Conversar por voz";
-      $("ouvi").innerText = "Sem internet para o reconhecimento de voz. Use a caixa de texto.";
+      $("ouvi").innerText = "Sem internet para o reconhecimento de voz. Use os botões ou a caixa de texto.";
       return;
     }
     $("ouvi").innerText = "Erro do microfone: " + e.error;
@@ -207,7 +232,7 @@ function criarRec() {
 }
 
 $("bOuvir").onclick = () => {
-  if (!SR) { $("ouvi").innerText = "Este navegador não tem reconhecimento de voz. Use o Chrome ou digite abaixo."; return; }
+  if (!SR) { $("ouvi").innerText = "Este navegador não tem reconhecimento de voz. Use o Chrome ou os botões."; return; }
   querOuvir = !querOuvir;
   $("bOuvir").classList.toggle("on", querOuvir);
   $("bOuvir").innerText = querOuvir ? "Ouvindo... (toque para parar)" : "Conversar por voz";
@@ -220,7 +245,6 @@ $("bOuvir").onclick = () => {
   }
 };
 
-/* conversa por texto (alternativa) */
 function enviarTexto() {
   const t = $("texto").value.trim();
   if (!t) return;
@@ -253,28 +277,39 @@ $("iniciar").onclick = async () => {
   }
 };
 
-/* ---------- transforma o recorte em desenho (cartoon) ---------- */
+/* ---------- desenho cartoon em alta qualidade ---------- */
 const tmp = document.createElement("canvas");
 const tctx = tmp.getContext("2d", {willReadFrequently: true});
 
 function desenhar(x, y, w, h) {
-  const esc = Math.min(1, 150 / Math.max(w, h));
-  const cw = Math.max(8, Math.round(w * esc)), ch = Math.max(8, Math.round(h * esc));
+  /* resolução maior e suavizada */
+  const esc = Math.min(1, 340 / Math.max(w, h));
+  const cw = Math.max(16, Math.round(w * esc)), ch = Math.max(16, Math.round(h * esc));
   tmp.width = cw; tmp.height = ch;
+  tctx.imageSmoothingQuality = "high";
+  tctx.filter = "blur(1.6px) saturate(1.4) contrast(1.12)"; /* alisa o ruído e realça a cor */
   tctx.drawImage(cam, x, y, w, h, 0, 0, cw, ch);
-  const src = tctx.getImageData(0, 0, cw, ch), d = src.data;
+  tctx.filter = "none";
+  const d = tctx.getImageData(0, 0, cw, ch).data;
+
   const L = new Float32Array(cw * ch);
   for (let i = 0; i < cw * ch; i++) L[i] = d[i*4]*0.3 + d[i*4+1]*0.59 + d[i*4+2]*0.11;
+
   const out = cctx.createImageData(cw, ch), o = out.data;
+  const NIVEL = 42; /* menos faixas de cor = visual de desenho */
   for (let yy = 0; yy < ch; yy++) {
     for (let xx = 0; xx < cw; xx++) {
       const i = yy * cw + xx, k = i * 4;
-      const borda = (xx < cw - 1 && Math.abs(L[i] - L[i+1]) > 28) || (yy < ch - 1 && Math.abs(L[i] - L[i+cw]) > 28);
-      if (borda) { o[k] = 20; o[k+1] = 20; o[k+2] = 30; }
-      else {
-        o[k]   = Math.min(255, Math.round(d[k]   / 85) * 85);
-        o[k+1] = Math.min(255, Math.round(d[k+1] / 85) * 85);
-        o[k+2] = Math.min(255, Math.round(d[k+2] / 85) * 85);
+      let e = 0;
+      if (xx > 0 && yy > 0 && xx < cw - 1 && yy < ch - 1) {
+        const gx = L[i+1-cw] + 2*L[i+1] + L[i+1+cw] - L[i-1-cw] - 2*L[i-1] - L[i-1+cw];
+        const gy = L[i+cw-1] + 2*L[i+cw] + L[i+cw+1] - L[i-cw-1] - 2*L[i-cw] - L[i-cw+1];
+        const mag = Math.abs(gx) + Math.abs(gy);
+        e = Math.min(1, Math.max(0, (mag - 110) / 140)); /* contorno suave */
+      }
+      for (let c = 0; c < 3; c++) {
+        const cor = Math.min(255, Math.round(d[k+c] / NIVEL) * NIVEL);
+        o[k+c] = Math.round(cor * (1 - e) + 25 * e);
       }
       o[k+3] = 255;
     }
@@ -297,7 +332,7 @@ function voltarEsfera() {
 async function olhar() {
   if (ocupado || !model || cam.readyState < 2) return;
 
-  /* TRAVADO: durante os 20 segundos não analisa nada, só mostra a contagem */
+  /* TRAVADO: durante os 20 segundos não analisa nada */
   if (atual && Date.now() < trancadoAte) {
     const resta = Math.ceil((trancadoAte - Date.now()) / 1000);
     $("info").innerText = "Eu sou: " + (NOMES[atual] || atual) + " (posso mudar em " + resta + "s)";
@@ -332,7 +367,7 @@ async function olhar() {
   ocupado = false;
 }
 
-/* ---------- interação: inclinar 3D, olhos seguem o dedo, toque para falar ---------- */
+/* ---------- interação ---------- */
 let alvoTX = 0, alvoTY = 0, tx = 0, ty = 0;
 let alvoPX = 0, alvoPY = 0, px = 0, py = 0, ultimoPonteiro = 0;
 
