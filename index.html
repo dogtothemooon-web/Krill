@@ -12,7 +12,10 @@ button:disabled{opacity:.5}
 button.sec{background:#444}
 video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
 #telaPreta{display:none;width:100%;aspect-ratio:3/4;background:#000000;border-radius:8px;margin-top:8px;align-items:center;justify-content:center;overflow:hidden}
-#telaPreta img{max-width:100%;max-height:100%;object-fit:contain}
+#telaPreta img{max-width:100%;max-height:100%;object-fit:contain;transition:filter .4s}
+#telaPreta img.alerta{filter:hue-rotate(240deg) saturate(1.5) drop-shadow(0 0 20px red)}
+#telaPreta img.falando{animation:pulsa .6s ease-in-out infinite}
+@keyframes pulsa{50%{transform:scale(1.06)}}
 #telaPreta span{color:#ff0000;font-weight:bold;font-size:11vw;text-align:center;animation:pisca 1s infinite}
 @keyframes pisca{50%{opacity:.2}}
 #status{font-size:17px;margin:10px 0;min-height:22px}
@@ -39,7 +42,7 @@ video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:
 </div>
 
 <video id="v" playsinline muted></video>
-<div id="telaPreta"><img src="esfera.gif" alt="esfera"></div>
+<div id="telaPreta"><img id="esfera" src="esfera.gif" alt="esfera"></div>
 <div id="status"></div>
 
 <button id="recordAudio" style="display:none;background:#16803c">Gravar áudio por 10 segundos</button>
@@ -58,20 +61,39 @@ const $ = id => document.getElementById(id);
 let TOKEN = "", chat = "";
 let prev = null, ultimo = 0, polling = false, pollTimer = null, alarmTimer = null;
 let enviadas = [];
+let ultimoMov = 0, ultimaFala = 0;
 const INICIO = Math.floor(Date.now() / 1000) - 5;
 
 const LIMITE = 3000;
 const INTERVALO = 10000;
+const INTERVALO_FALA = 15000;
 
-/* ---------- voz de robô da esfera ---------- */
+/* ---------- frases que a esfera fala ao detectar movimento ---------- */
+const FRASES = [
+  "Movimento detectado",
+  "Eu estou vendo você",
+  "Identifiquei uma presença",
+  "Você não deveria estar aqui",
+  "Alerta. Intruso detectado",
+  "Estou te observando"
+];
+
+/* ---------- voz de robô da esfera (com pulso) ---------- */
 function falar(texto) {
   try {
+    const esfera = $("esfera");
     speechSynthesis.cancel();
-    texto.split(" ").forEach(palavra => {
+    const palavras = texto.split(" ");
+    palavras.forEach((palavra, i) => {
       const fala = new SpeechSynthesisUtterance(palavra);
       fala.lang = "pt-BR";
       fala.rate = 0.7;
       fala.pitch = 0.1;
+      if (i === 0) fala.onstart = () => esfera.classList.add("falando");
+      if (i === palavras.length - 1) {
+        fala.onend = () => esfera.classList.remove("falando");
+        fala.onerror = () => esfera.classList.remove("falando");
+      }
       speechSynthesis.speak(fala);
     });
   } catch(e) {}
@@ -247,6 +269,7 @@ async function gravarAudio() {
 async function iniciarAlarme() {
   if (!readCfg()) return;
   falar("Ola, Você esta participando de uma Simulação, você foi escolhido para este teste");
+  ultimaFala = Date.now();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {facingMode: $("cam").value}
@@ -281,6 +304,19 @@ async function iniciarAlarme() {
         }
         const movimento = area > LIMITE;
         $("status").innerText = movimento ? "MOVIMENTO! (" + area + ")" : "Sem movimento (" + area + ")";
+
+        /* esfera reage: vermelha com movimento, volta ao verde após 3s parado */
+        if (movimento) {
+          ultimoMov = Date.now();
+          $("esfera").classList.add("alerta");
+          if (Date.now() - ultimaFala > INTERVALO_FALA && !speechSynthesis.speaking) {
+            ultimaFala = Date.now();
+            falar(FRASES[Math.floor(Math.random() * FRASES.length)]);
+          }
+        } else if (Date.now() - ultimoMov > 3000) {
+          $("esfera").classList.remove("alerta");
+        }
+
         if (movimento && Date.now() - ultimo > INTERVALO) {
           ultimo = Date.now();
           try { await enviarFoto(video); }
