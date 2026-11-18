@@ -34,7 +34,7 @@ function carregar() {
   const lista = $("lista");
   lista.innerHTML = "";
   if (!vozes.length) { lista.innerText = "Nenhuma voz encontrada. Recarregue a página."; return; }
-  vozes.filter(v => v.lang.toLowerCase().startsWith("pt")).forEach(v => {
+  vozes.filter(v => true).forEach(v => {
     const b = document.createElement("button");
     b.textContent = v.name + " (" + v.lang + ")";
     b.onclick = () => {
