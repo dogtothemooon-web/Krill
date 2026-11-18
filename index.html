@@ -63,6 +63,8 @@ let prev = null, ultimo = 0, polling = false, pollTimer = null, alarmTimer = nul
 let enviadas = [];
 let ultimoMov = 0, ultimaFala = 0;
 let buscandoLocal = false;
+let faladas = new Set();
+let primeiraCarga = true;
 const INICIO = Math.floor(Date.now() / 1000) - 5;
 
 const LIMITE = 3000;
@@ -84,7 +86,7 @@ function falar(texto) {
   try {
     const esfera = $("esfera");
     speechSynthesis.cancel();
-    const palavras = texto.split(" ");
+    const palavras = texto.split(" ").filter(Boolean);
     palavras.forEach((palavra, i) => {
       const fala = new SpeechSynthesisUtterance(palavra);
       fala.lang = "pt-BR";
@@ -180,7 +182,7 @@ async function conectar() {
   $("sendMessage").disabled = false;
   carregarMensagens();
   clearInterval(pollTimer);
-  pollTimer = setInterval(carregarMensagens, 3000);
+  pollTimer = setInterval(carregarMensagens, 2000);
   return true;
 }
 
@@ -228,7 +230,18 @@ async function carregarMensagens() {
     const recebidas = d.result
       .map(u => u.message)
       .filter(m => m && m.text && String(m.chat.id) === chat && m.date >= INICIO)
-      .map(m => ({date: m.date, text: m.text, mine: false}));
+      .map(m => ({id: m.message_id, date: m.date, text: m.text, mine: false}));
+
+    /* a esfera fala cada mensagem nova que chega pelo Telegram */
+    const novas = recebidas.filter(m => !faladas.has(m.id));
+    novas.forEach(m => faladas.add(m.id));
+    if (!primeiraCarga && novas.length) {
+      const texto = novas.map(m => m.text).join(". ").slice(0, 300);
+      falar(texto);
+      $("status").innerText = "A esfera disse: " + texto;
+    }
+    primeiraCarga = false;
+
     const tudo = recebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
     mostrarMensagens(tudo);
   } catch(e) {
