@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Esfera viva</title>
+<title>Esfera viva v3</title>
 <style>
 body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:16px}
 #palco{position:relative;width:100%;height:50vh;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;perspective:800px;touch-action:none}
@@ -31,7 +31,7 @@ select,input{background:#222;border:1px solid #444;font-weight:normal}
 </style>
 </head>
 <body>
-<h2>Esfera viva</h2>
+<h2>Esfera viva v3</h2>
 <div id="palco">
   <img id="esfera" src="esfera.gif" alt="esfera">
   <div id="personagem">
@@ -85,23 +85,35 @@ const NOMES = {person:"pessoa", bicycle:"bicicleta", car:"carro", motorcycle:"mo
 const frases = n => ["Eu sou " + n + "!", "Olá humano. Agora eu sou " + n,
   "Gostou do meu visual de " + n + "?", "Me mostre outra coisa", "Eu estou vivo!"];
 
+function sorteio(l) { return l[Math.floor(Math.random() * l.length)]; }
+
 /* ---------- voz + boca ---------- */
+let idFala = 0, timerFala = null;
+
+function fimFala(id) {
+  if (id !== idFala) return;
+  clearTimeout(timerFala);
+  falando = false;
+  retomarOuvir();
+}
+
 function falar(t) {
   $("fala").innerText = "“" + t + "”";
   pararOuvir();
-  if (!voz) {
-    falando = true;
-    setTimeout(() => { falando = false; retomarOuvir(); }, 1500);
-    return;
-  }
+  const id = ++idFala;
+  falando = true;
+  clearTimeout(timerFala);
+  /* segurança: nunca fica "falando" preso */
+  timerFala = setTimeout(() => fimFala(id), Math.max(2500, t.length * 120) + 3000);
+  if (!voz) { setTimeout(() => fimFala(id), 1500); return; }
   try {
     speechSynthesis.cancel();
     const f = new SpeechSynthesisUtterance(t);
     f.lang = "pt-BR"; f.rate = 0.8; f.pitch = 0.1;
-    f.onstart = () => falando = true;
-    f.onend = f.onerror = () => { falando = false; retomarOuvir(); };
+    f.onend = () => fimFala(id);
+    f.onerror = () => fimFala(id);
     speechSynthesis.speak(f);
-  } catch(e) { falando = false; retomarOuvir(); }
+  } catch(e) { fimFala(id); }
 }
 $("bVoz").onclick = () => {
   voz = !voz;
@@ -117,7 +129,6 @@ function limpar(t) {
   return t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 function tem(t, lista) { return lista.some(p => t.includes(p)); }
-function sorteio(l) { return l[Math.floor(Math.random() * l.length)]; }
 
 function responder(texto) {
   const t = limpar(texto);
@@ -136,22 +147,27 @@ function responder(texto) {
   else if (tem(t, ["obrigado", "valeu"])) r = "De nada, humano";
   else if (tem(t, ["quem te criou", "quem te fez"])) r = "Fui criado por um humano muito criativo";
   else if (tem(t, ["voce esta vivo", "voce e vivo", "voce e real"])) r = "Eu acho que sim. Você me ouve, então eu existo";
-  else if (tem(t, ["simulacao", "simulação", "teste"])) r = "Você foi escolhido para este teste. Continue";
+  else if (tem(t, ["simulacao", "teste"])) r = "Você foi escolhido para este teste. Continue";
   else if (tem(t, ["feio", "bobo", "chato"])) r = "Isso não foi gentil. Mas eu perdoo";
   else if (tem(t, ["lindo", "legal", "incrivel", "bonito"])) r = "Obrigado. Eu me esforço";
   else r = sorteio(["Interessante. Fale mais", "Não entendi bem, mas estou ouvindo", "Hmm. Pode repetir, humano?", "Eu estou processando isso"]);
-  setTimeout(() => falar(r), 250);
+  setTimeout(() => falar(r), 200);
 }
 
 function abrirOuvir() {
-  if (!rec || ouvindo || falando) return;
-  try { rec.start(); ouvindo = true; } catch(e) {}
+  if (!rec || !querOuvir || ouvindo || falando) return;
+  try {
+    rec.start();
+    ouvindo = true;
+    $("ouvi").innerText = "🎤 Ouvindo... pode falar";
+  } catch(e) {}
 }
 function pararOuvir() {
-  if (rec && ouvindo) { try { rec.stop(); } catch(e) {} }
+  if (rec && ouvindo) { try { rec.abort(); } catch(e) {} }
+  ouvindo = false;
 }
 function retomarOuvir() {
-  if (querOuvir) setTimeout(abrirOuvir, 400);
+  if (querOuvir) setTimeout(abrirOuvir, 700);
 }
 
 function criarRec() {
@@ -160,19 +176,33 @@ function criarRec() {
   rec.continuous = false;
   rec.interimResults = false;
   rec.onresult = e => {
+    if (falando) return;
     const t = e.results[0][0].transcript;
     $("ouvi").innerText = "Você: " + t;
     responder(t);
   };
-  rec.onend = () => { ouvindo = false; if (querOuvir && !falando) setTimeout(abrirOuvir, 400); };
+  rec.onend = () => {
+    ouvindo = false;
+    if (querOuvir && !falando) setTimeout(abrirOuvir, 500);
+  };
   rec.onerror = e => {
     ouvindo = false;
+    if (e.error === "no-speech" || e.error === "aborted") return;
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       querOuvir = false;
       $("bOuvir").classList.remove("on");
       $("bOuvir").innerText = "Conversar por voz";
-      $("ouvi").innerText = "Microfone bloqueado. Libere nas permissões do site.";
+      $("ouvi").innerText = "Microfone bloqueado. Libere nas permissões do site (cadeado → Permissões → Microfone).";
+      return;
     }
+    if (e.error === "network") {
+      querOuvir = false;
+      $("bOuvir").classList.remove("on");
+      $("bOuvir").innerText = "Conversar por voz";
+      $("ouvi").innerText = "Sem internet para o reconhecimento de voz. Use a caixa de texto.";
+      return;
+    }
+    $("ouvi").innerText = "Erro do microfone: " + e.error;
   };
 }
 
@@ -183,7 +213,6 @@ $("bOuvir").onclick = () => {
   $("bOuvir").innerText = querOuvir ? "Ouvindo... (toque para parar)" : "Conversar por voz";
   if (querOuvir) {
     if (!rec) criarRec();
-    $("ouvi").innerText = "Pode falar...";
     abrirOuvir();
   } else {
     pararOuvir();
@@ -203,7 +232,10 @@ $("bEnviar").onclick = enviarTexto;
 $("texto").addEventListener("keydown", e => { if (e.key === "Enter") enviarTexto(); });
 
 /* ---------- câmera e reconhecimento ---------- */
+let iniciando = false;
 $("iniciar").onclick = async () => {
+  if (iniciando) return;
+  iniciando = true;
   try {
     $("info").innerText = "Carregando o reconhecimento de objetos...";
     model = await cocoSsd.load();
@@ -216,6 +248,7 @@ $("iniciar").onclick = async () => {
     falar("Sistema ativo");
     setInterval(olhar, 350);
   } catch(e) {
+    iniciando = false;
     $("info").innerText = "Erro: " + e.message;
   }
 };
@@ -263,11 +296,10 @@ function voltarEsfera() {
 
 async function olhar() {
   if (ocupado || !model || cam.readyState < 2) return;
-  const agora = Date.now();
 
-  /* travado: fica como o objeto até completar 20 segundos */
-  if (atual && agora < trancadoAte) {
-    const resta = Math.ceil((trancadoAte - agora) / 1000);
+  /* TRAVADO: durante os 20 segundos não analisa nada, só mostra a contagem */
+  if (atual && Date.now() < trancadoAte) {
+    const resta = Math.ceil((trancadoAte - Date.now()) / 1000);
     $("info").innerText = "Eu sou: " + (NOMES[atual] || atual) + " (posso mudar em " + resta + "s)";
     return;
   }
@@ -314,13 +346,9 @@ palco.addEventListener("pointermove", e => {
 });
 palco.addEventListener("pointerleave", () => { alvoTX = 0; alvoTY = 0; });
 palco.addEventListener("click", () => {
-  if (atual) {
-    const n = NOMES[atual] || atual;
-    falar(sorteio(frases(n)));
-  }
+  if (atual) falar(sorteio(frases(NOMES[atual] || atual)));
 });
 
-/* piscar */
 function piscar() {
   const olhos = [$("oE"), $("oD")];
   olhos.forEach(o => o.style.transform = "scaleY(0.08)");
@@ -329,7 +357,6 @@ function piscar() {
 }
 piscar();
 
-/* olhar em volta sozinho quando ninguém toca */
 setInterval(() => {
   if (Date.now() - ultimoPonteiro > 2500) {
     alvoPX = (Math.random() * 2 - 1) * 5;
