@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teste de vozes</title>
+<style>
+body{font-family:sans-serif;background:#111;color:#eee;padding:16px}
+button{width:100%;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:0;background:#2a7de1;color:#fff;font-weight:bold}
+label{display:block;margin-top:14px}
+input[type=range]{width:100%}
+</style>
+</head>
+<body>
+<h2>Teste de vozes</h2>
+<input id="texto" value="Olá humano, seja bem vindo" style="width:100%;padding:10px;font-size:16px;box-sizing:border-box">
+
+<label>Velocidade: <span id="rv">0.7</span></label>
+<input id="rate" type="range" min="0.1" max="2" step="0.1" value="0.7">
+
+<label>Tom (grave/agudo): <span id="pv">0.1</span></label>
+<input id="pitch" type="range" min="0" max="2" step="0.1" value="0.1">
+
+<h3>Vozes</h3>
+<div id="lista"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+$("rate").oninput = () => $("rv").innerText = $("rate").value;
+$("pitch").oninput = () => $("pv").innerText = $("pitch").value;
+
+function carregar() {
+  const vozes = speechSynthesis.getVoices();
+  const lista = $("lista");
+  lista.innerHTML = "";
+  if (!vozes.length) { lista.innerText = "Nenhuma voz encontrada. Recarregue a página."; return; }
+  vozes.filter(v => v.lang.toLowerCase().startsWith("pt")).forEach(v => {
+    const b = document.createElement("button");
+    b.textContent = v.name + " (" + v.lang + ")";
+    b.onclick = () => {
+      speechSynthesis.cancel();
+      const f = new SpeechSynthesisUtterance($("texto").value);
+      f.voice = v;
+      f.lang = v.lang;
+      f.rate = parseFloat($("rate").value);
+      f.pitch = parseFloat($("pitch").value);
+      speechSynthesis.speak(f);
+    };
+    lista.appendChild(b);
+  });
+}
+speechSynthesis.onvoiceschanged = carregar;
+carregar();
+</script>
+</body>
+</html>
