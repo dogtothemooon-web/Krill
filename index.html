@@ -91,8 +91,8 @@ function falar(texto) {
     palavras.forEach((palavra, i) => {
       const fala = new SpeechSynthesisUtterance(palavra);
       fala.lang = "pt-BR";
-      fala.rate = 0.7;
-      fala.pitch = 0.1;
+      fala.rate = 0.9;
+      fala.pitch = 0.3;
       if (i === 0) fala.onstart = () => esfera.classList.add("falando");
       if (i === palavras.length - 1) {
         fala.onend = () => esfera.classList.remove("falando");
