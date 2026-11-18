@@ -63,15 +63,17 @@ const INICIO = Math.floor(Date.now() / 1000) - 5;
 const LIMITE = 3000;
 const INTERVALO = 10000;
 
-/* ---------- voz da esfera ---------- */
+/* ---------- voz de robô da esfera ---------- */
 function falar(texto) {
   try {
-    const fala = new SpeechSynthesisUtterance(texto);
-    fala.lang = "pt-BR";
-    fala.rate = 0.9;
-    fala.pitch = 0.7;
     speechSynthesis.cancel();
-    speechSynthesis.speak(fala);
+    texto.split(" ").forEach(palavra => {
+      const fala = new SpeechSynthesisUtterance(palavra);
+      fala.lang = "pt-BR";
+      fala.rate = 0.7;
+      fala.pitch = 0.1;
+      speechSynthesis.speak(fala);
+    });
   } catch(e) {}
 }
 
