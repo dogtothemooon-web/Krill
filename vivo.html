@@ -6,7 +6,7 @@
 <title>Esfera viva</title>
 <style>
 body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:16px}
-#palco{position:relative;width:100%;height:58vh;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;perspective:800px;touch-action:none}
+#palco{position:relative;width:100%;height:50vh;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;perspective:800px;touch-action:none}
 #esfera{position:absolute;width:55%;max-width:300px;pointer-events:none;transition:all .7s ease}
 #esfera.some{opacity:0;transform:scale(.3);filter:blur(14px)}
 #personagem{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
@@ -18,222 +18,19 @@ body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:16px}
 #rosto{position:absolute;inset:0;width:100%;height:100%}
 .olho{transform-box:fill-box;transform-origin:center}
 #cam{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
-select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:0;background:#2a7de1;color:#fff;font-weight:bold}
-select{background:#222;border:1px solid #444}
+select,button,input{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:0;background:#2a7de1;color:#fff;font-weight:bold}
+select,input{background:#222;border:1px solid #444;font-weight:normal}
 #bVoz{background:#16803c}
+#bOuvir{background:#8a2be2}
+#bOuvir.on{background:#c0392b}
 #info{font-size:18px;min-height:26px;margin:8px 0 0}
 #fala{font-size:20px;min-height:28px;color:#7dff9a;margin:4px 0}
+#ouvi{font-size:17px;min-height:24px;color:#9ec9ff;margin:4px 0}
+.row{display:flex;gap:8px}
+.row button{width:auto}
 </style>
 </head>
 <body>
 <h2>Esfera viva</h2>
 <div id="palco">
-  <img id="esfera" src="esfera.gif" alt="esfera">
-  <div id="personagem">
-    <div id="aparece"><div id="flut">
-      <canvas id="corpo"></canvas>
-      <svg id="rosto" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
-        <g class="olho" id="oE"><circle cx="35" cy="38" r="12" fill="#fff" stroke="#111" stroke-width="3"/><circle id="pE" cx="35" cy="38" r="5.5" fill="#111"/></g>
-        <g class="olho" id="oD"><circle cx="65" cy="38" r="12" fill="#fff" stroke="#111" stroke-width="3"/><circle id="pD" cx="65" cy="38" r="5.5" fill="#111"/></g>
-        <path id="sorriso" d="M 34 64 Q 50 80 66 64" fill="none" stroke="#111" stroke-width="4.5" stroke-linecap="round"/>
-        <ellipse id="boca" cx="50" cy="68" rx="14" ry="3" fill="#3a0d0d" stroke="#111" stroke-width="3" style="display:none"/>
-      </svg>
-    </div></div>
-  </div>
-</div>
-<video id="cam" playsinline muted></video>
-
-<p id="info"></p>
-<p id="fala"></p>
-<select id="qual">
-  <option value="environment">Câmera traseira</option>
-  <option value="user">Câmera frontal</option>
-</select>
-<button id="iniciar">Ligar câmera</button>
-<button id="bVoz">Voz ligada</button>
-
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
-<script>
-const $ = id => document.getElementById(id);
-const esfera = $("esfera"), cam = $("cam"), palco = $("palco");
-const corpo = $("corpo"), cctx = corpo.getContext("2d");
-let model, voz = true, atual = "", visto = 0, ultimoDesenho = 0, ocupado = false, falando = false;
-
-const NOMES = {person:"pessoa", bicycle:"bicicleta", car:"carro", motorcycle:"moto", bus:"ônibus", truck:"caminhão",
-  bird:"pássaro", cat:"gato", dog:"cachorro", horse:"cavalo", backpack:"mochila", umbrella:"guarda-chuva",
-  handbag:"bolsa", bottle:"garrafa", "wine glass":"taça", cup:"copo", fork:"garfo", knife:"faca", spoon:"colher",
-  bowl:"tigela", banana:"banana", apple:"maçã", orange:"laranja", pizza:"pizza", cake:"bolo", chair:"cadeira",
-  couch:"sofá", "potted plant":"planta", bed:"cama", "dining table":"mesa", tv:"televisão", laptop:"notebook",
-  mouse:"mouse", remote:"controle remoto", keyboard:"teclado", "cell phone":"celular", book:"livro",
-  clock:"relógio", vase:"vaso", scissors:"tesoura", "teddy bear":"urso de pelúcia", toothbrush:"escova de dente"};
-
-const frases = n => ["Eu sou " + n + "!", "Olá humano. Agora eu sou " + n,
-  "Gostou do meu visual de " + n + "?", "Me mostre outra coisa", "Eu estou vivo!"];
-
-/* ---------- voz + boca ---------- */
-function falar(t) {
-  $("fala").innerText = "“" + t + "”";
-  if (!voz) {
-    falando = true;
-    setTimeout(() => falando = false, 1500);
-    return;
-  }
-  try {
-    speechSynthesis.cancel();
-    const f = new SpeechSynthesisUtterance(t);
-    f.lang = "pt-BR"; f.rate = 0.8; f.pitch = 0.1;
-    f.onstart = () => falando = true;
-    f.onend = f.onerror = () => falando = false;
-    speechSynthesis.speak(f);
-  } catch(e) {}
-}
-$("bVoz").onclick = () => {
-  voz = !voz;
-  $("bVoz").innerText = voz ? "Voz ligada" : "Voz desligada";
-  if (!voz) speechSynthesis.cancel();
-};
-
-/* ---------- câmera e reconhecimento ---------- */
-$("iniciar").onclick = async () => {
-  try {
-    $("info").innerText = "Carregando o reconhecimento de objetos...";
-    model = await cocoSsd.load();
-    const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: $("qual").value}});
-    cam.srcObject = stream;
-    await cam.play();
-    $("iniciar").style.display = "none";
-    $("qual").style.display = "none";
-    $("info").innerText = "Aponte a câmera para um objeto.";
-    falar("Sistema ativo");
-    setInterval(olhar, 350);
-  } catch(e) {
-    $("info").innerText = "Erro: " + e.message;
-  }
-};
-
-/* ---------- transforma o recorte em desenho (cartoon) ---------- */
-const tmp = document.createElement("canvas");
-const tctx = tmp.getContext("2d", {willReadFrequently: true});
-
-function desenhar(x, y, w, h) {
-  const esc = Math.min(1, 150 / Math.max(w, h));
-  const cw = Math.max(8, Math.round(w * esc)), ch = Math.max(8, Math.round(h * esc));
-  tmp.width = cw; tmp.height = ch;
-  tctx.drawImage(cam, x, y, w, h, 0, 0, cw, ch);
-  const src = tctx.getImageData(0, 0, cw, ch), d = src.data;
-  const L = new Float32Array(cw * ch);
-  for (let i = 0; i < cw * ch; i++) L[i] = d[i*4]*0.3 + d[i*4+1]*0.59 + d[i*4+2]*0.11;
-  const out = cctx.createImageData(cw, ch), o = out.data;
-  for (let yy = 0; yy < ch; yy++) {
-    for (let xx = 0; xx < cw; xx++) {
-      const i = yy * cw + xx, k = i * 4;
-      const borda = (xx < cw - 1 && Math.abs(L[i] - L[i+1]) > 28) || (yy < ch - 1 && Math.abs(L[i] - L[i+cw]) > 28);
-      if (borda) { o[k] = 20; o[k+1] = 20; o[k+2] = 30; }
-      else {
-        o[k]   = Math.min(255, Math.round(d[k]   / 85) * 85);
-        o[k+1] = Math.min(255, Math.round(d[k+1] / 85) * 85);
-        o[k+2] = Math.min(255, Math.round(d[k+2] / 85) * 85);
-      }
-      o[k+3] = 255;
-    }
-  }
-  corpo.width = cw; corpo.height = ch;
-  cctx.putImageData(out, 0, 0);
-  const k = Math.min(palco.clientWidth * 0.7 / cw, palco.clientHeight * 0.72 / ch);
-  const box = $("flut");
-  box.style.width = Math.round(cw * k) + "px";
-  box.style.height = Math.round(ch * k) + "px";
-}
-
-async function olhar() {
-  if (ocupado || !model || cam.readyState < 2) return;
-  ocupado = true;
-  try {
-    const achados = (await model.detect(cam)).filter(p => p.score > 0.55);
-    if (achados.length) {
-      const p = achados.sort((a, b) => b.bbox[2]*b.bbox[3] - a.bbox[2]*a.bbox[3])[0];
-      let [x, y, w, h] = p.bbox;
-      x = Math.max(0, x); y = Math.max(0, y);
-      w = Math.min(w, cam.videoWidth - x); h = Math.min(h, cam.videoHeight - y);
-      const nome = NOMES[p.class] || p.class;
-      const mudou = p.class !== atual;
-      if (mudou || Date.now() - ultimoDesenho > 1200) { desenhar(x, y, w, h); ultimoDesenho = Date.now(); }
-      visto = Date.now();
-      esfera.classList.add("some");
-      $("aparece").classList.add("on");
-      $("info").innerText = "Eu sou: " + nome;
-      if (mudou) { atual = p.class; falar("Eu sou " + nome); }
-    } else if (Date.now() - visto > 1500 && atual) {
-      atual = "";
-      $("aparece").classList.remove("on");
-      esfera.classList.remove("some");
-      $("info").innerText = "Aponte a câmera para um objeto.";
-      $("fala").innerText = "";
-    }
-  } catch(e) {}
-  ocupado = false;
-}
-
-/* ---------- interação: inclinar 3D, olhos seguem o dedo, toque para falar ---------- */
-let alvoTX = 0, alvoTY = 0, tx = 0, ty = 0;
-let alvoPX = 0, alvoPY = 0, px = 0, py = 0, ultimoPonteiro = 0;
-
-palco.addEventListener("pointermove", e => {
-  const r = palco.getBoundingClientRect();
-  const nx = (e.clientX - r.left) / r.width * 2 - 1;
-  const ny = (e.clientY - r.top) / r.height * 2 - 1;
-  alvoTY = nx * 28; alvoTX = -ny * 22;
-  alvoPX = nx * 5; alvoPY = ny * 4;
-  ultimoPonteiro = Date.now();
-});
-palco.addEventListener("pointerleave", () => { alvoTX = 0; alvoTY = 0; });
-palco.addEventListener("click", () => {
-  if (atual) {
-    const n = NOMES[atual] || atual;
-    const l = frases(n);
-    falar(l[Math.floor(Math.random() * l.length)]);
-  }
-});
-
-/* piscar */
-function piscar() {
-  const olhos = [$("oE"), $("oD")];
-  olhos.forEach(o => o.style.transform = "scaleY(0.08)");
-  setTimeout(() => olhos.forEach(o => o.style.transform = "scaleY(1)"), 140);
-  setTimeout(piscar, 2000 + Math.random() * 3500);
-}
-piscar();
-
-/* olhar em volta sozinho quando ninguém toca */
-setInterval(() => {
-  if (Date.now() - ultimoPonteiro > 2500) {
-    alvoPX = (Math.random() * 2 - 1) * 5;
-    alvoPY = (Math.random() * 2 - 1) * 3;
-  }
-}, 1500);
-
-let abertura = 0;
-function animar(t) {
-  tx += (alvoTX - tx) * 0.1; ty += (alvoTY - ty) * 0.1;
-  $("personagem").style.transform = "rotateX(" + tx.toFixed(1) + "deg) rotateY(" + ty.toFixed(1) + "deg)";
-
-  px += (alvoPX - px) * 0.15; py += (alvoPY - py) * 0.15;
-  $("pE").setAttribute("cx", 35 + px); $("pE").setAttribute("cy", 38 + py);
-  $("pD").setAttribute("cx", 65 + px); $("pD").setAttribute("cy", 38 + py);
-
-  const alvo = falando ? Math.abs(Math.sin(t / 110)) * (0.5 + 0.5 * Math.abs(Math.sin(t / 37))) : 0;
-  abertura += (alvo - abertura) * 0.4;
-  const boca = $("boca"), sorriso = $("sorriso");
-  if (abertura > 0.08) {
-    boca.style.display = ""; sorriso.style.display = "none";
-    boca.setAttribute("ry", (3 + abertura * 12).toFixed(1));
-  } else {
-    boca.style.display = "none"; sorriso.style.display = "";
-  }
-  requestAnimationFrame(animar);
-}
-requestAnimationFrame(animar);
-</script>
-</body>
-</html>
+  <img id="esfera"
