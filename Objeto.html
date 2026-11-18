@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Esfera vira objeto</title>
+<style>
+body{font-family:sans-serif;background:#111;color:#eee;margin:0;padding:16px}
+#palco{position:relative;width:100%;height:55vh;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#esfera,#obj{position:absolute;pointer-events:none;transition:all .7s ease}
+#esfera{width:55%;max-width:300px}
+#esfera.some{opacity:0;transform:scale(.3);filter:blur(14px)}
+#obj{max-width:75%;max-height:85%;opacity:0;transform:scale(.3);filter:blur(14px) hue-rotate(60deg);
+  -webkit-mask-image:radial-gradient(ellipse at center,#000 55%,transparent 100%);
+  mask-image:radial-gradient(ellipse at center,#000 55%,transparent 100%)}
+#obj.on{opacity:1;transform:scale(1);filter:blur(0) saturate(1.3) drop-shadow(0 0 18px #3f3)}
+#cam{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
+select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:0;background:#2a7de1;color:#fff;font-weight:bold}
+select{background:#222;border:1px solid #444}
+#bVoz{background:#16803c}
+#info{font-size:18px;min-height:26px}
+</style>
+</head>
+<body>
+<h2>Esfera vira objeto</h2>
+<div id="palco">
+  <img id="esfera" src="esfera.gif" alt="esfera">
+  <canvas id="obj"></canvas>
+</div>
+<video id="cam" playsinline muted></video>
+
+<select id="qual">
+  <option value="environment">Câmera traseira</option>
+  <option value="user">Câmera frontal</option>
+</select>
+<button id="iniciar">Ligar câmera</button>
+<button id="bVoz">Voz ligada</button>
+<p id="info"></p>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esfera = $("esfera"), obj = $("obj"), cam = $("cam");
+const octx = obj.getContext("2d");
+let model, voz = true, atual = "", visto = 0, ocupado = false;
+
+const NOMES = {person:"pessoa", bicycle:"bicicleta", car:"carro", motorcycle:"moto", bus:"ônibus", truck:"caminhão",
+  bird:"pássaro", cat:"gato", dog:"cachorro", horse:"cavalo", backpack:"mochila", umbrella:"guarda-chuva",
+  handbag:"bolsa", bottle:"garrafa", "wine glass":"taça", cup:"copo", fork:"garfo", knife:"faca", spoon:"colher",
+  bowl:"tigela", banana:"banana", apple:"maçã", orange:"laranja", pizza:"pizza", cake:"bolo", chair:"cadeira",
+  couch:"sofá", "potted plant":"planta", bed:"cama", "dining table":"mesa", tv:"televisão", laptop:"notebook",
+  mouse:"mouse", remote:"controle remoto", keyboard:"teclado", "cell phone":"celular", book:"livro",
+  clock:"relógio", vase:"vaso", scissors:"tesoura", "teddy bear":"urso de pelúcia", toothbrush:"escova de dente"};
+
+function falar(t) {
+  if (!voz) return;
+  try {
+    speechSynthesis.cancel();
+    const f = new SpeechSynthesisUtterance(t);
+    f.lang = "pt-BR"; f.rate = 0.8; f.pitch = 0.1;
+    speechSynthesis.speak(f);
+  } catch(e) {}
+}
+
+$("bVoz").onclick = () => {
+  voz = !voz;
+  $("bVoz").innerText = voz ? "Voz ligada" : "Voz desligada";
+  if (!voz) speechSynthesis.cancel();
+};
+
+$("iniciar").onclick = async () => {
+  try {
+    $("info").innerText = "Carregando o reconhecimento de objetos...";
+    model = await cocoSsd.load();
+    const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: $("qual").value}});
+    cam.srcObject = stream;
+    await cam.play();
+    $("iniciar").style.display = "none";
+    $("qual").style.display = "none";
+    $("info").innerText = "Aponte a câmera para um objeto.";
+    falar("Sistema ativo");
+    setInterval(olhar, 350);
+  } catch(e) {
+    $("info").innerText = "Erro: " + e.message;
+  }
+};
+
+async function olhar() {
+  if (ocupado || !model || cam.readyState < 2) return;
+  ocupado = true;
+  try {
+    const achados = (await model.detect(cam)).filter(p => p.score > 0.55);
+    if (achados.length) {
+      /* escolhe o maior objeto da imagem */
+      const p = achados.sort((a, b) => b.bbox[2]*b.bbox[3] - a.bbox[2]*a.bbox[3])[0];
+      let [x, y, w, h] = p.bbox;
+      x = Math.max(0, x); y = Math.max(0, y);
+      w = Math.min(w, cam.videoWidth - x); h = Math.min(h, cam.videoHeight - y);
+      obj.width = w; obj.height = h;
+      octx.drawImage(cam, x, y, w, h, 0, 0, w, h);
+      visto = Date.now();
+      esfera.classList.add("some");
+      obj.classList.add("on");
+      const nome = NOMES[p.class] || p.class;
+      $("info").innerText = "Eu sou: " + nome + " (" + Math.round(p.score * 100) + "%)";
+      if (p.class !== atual) { atual = p.class; falar(nome); }
+    } else if (Date.now() - visto > 1500) {
+      voltar();
+    }
+  } catch(e) {}
+  ocupado = false;
+}
+
+function voltar() {
+  if (!atual && !obj.classList.contains("on")) return;
+  atual = "";
+  obj.classList.remove("on");
+  esfera.classList.remove("some");
+  $("info").innerText = "Aponte a câmera para um objeto.";
+}
+</script>
+</body>
+</html>
