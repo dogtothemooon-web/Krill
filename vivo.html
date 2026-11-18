@@ -33,4 +33,331 @@ select,input{background:#222;border:1px solid #444;font-weight:normal}
 <body>
 <h2>Esfera viva</h2>
 <div id="palco">
-  <img id="esfera"
+  <img id="esfera" src="esfera.gif" alt="esfera">
+  <div id="personagem">
+    <div id="aparece"><div id="flut">
+      <canvas id="corpo"></canvas>
+      <svg id="rosto" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+        <g class="olho" id="oE"><circle cx="35" cy="38" r="12" fill="#fff" stroke="#111" stroke-width="3"/><circle id="pE" cx="35" cy="38" r="5.5" fill="#111"/></g>
+        <g class="olho" id="oD"><circle cx="65" cy="38" r="12" fill="#fff" stroke="#111" stroke-width="3"/><circle id="pD" cx="65" cy="38" r="5.5" fill="#111"/></g>
+        <path id="sorriso" d="M 34 64 Q 50 80 66 64" fill="none" stroke="#111" stroke-width="4.5" stroke-linecap="round"/>
+        <ellipse id="boca" cx="50" cy="68" rx="14" ry="3" fill="#3a0d0d" stroke="#111" stroke-width="3" style="display:none"/>
+      </svg>
+    </div></div>
+  </div>
+</div>
+<video id="cam" playsinline muted></video>
+
+<p id="info"></p>
+<p id="fala"></p>
+<p id="ouvi"></p>
+
+<select id="qual">
+  <option value="environment">Câmera traseira</option>
+  <option value="user">Câmera frontal</option>
+</select>
+<button id="iniciar">Ligar câmera</button>
+<button id="bOuvir">Conversar por voz</button>
+<div class="row">
+  <input id="texto" placeholder="Ou digite aqui para conversar...">
+  <button id="bEnviar">Enviar</button>
+</div>
+<button id="bVoz">Voz ligada</button>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esfera = $("esfera"), cam = $("cam"), palco = $("palco");
+const corpo = $("corpo"), cctx = corpo.getContext("2d");
+let model, voz = true, atual = "", visto = 0, ultimoDesenho = 0, ocupado = false, falando = false;
+let trancadoAte = 0;
+const TEMPO_FIXO = 20000; /* 20 segundos como o objeto */
+
+const NOMES = {person:"pessoa", bicycle:"bicicleta", car:"carro", motorcycle:"moto", bus:"ônibus", truck:"caminhão",
+  bird:"pássaro", cat:"gato", dog:"cachorro", horse:"cavalo", backpack:"mochila", umbrella:"guarda-chuva",
+  handbag:"bolsa", bottle:"garrafa", "wine glass":"taça", cup:"copo", fork:"garfo", knife:"faca", spoon:"colher",
+  bowl:"tigela", banana:"banana", apple:"maçã", orange:"laranja", pizza:"pizza", cake:"bolo", chair:"cadeira",
+  couch:"sofá", "potted plant":"planta", bed:"cama", "dining table":"mesa", tv:"televisão", laptop:"notebook",
+  mouse:"mouse", remote:"controle remoto", keyboard:"teclado", "cell phone":"celular", book:"livro",
+  clock:"relógio", vase:"vaso", scissors:"tesoura", "teddy bear":"urso de pelúcia", toothbrush:"escova de dente"};
+
+const frases = n => ["Eu sou " + n + "!", "Olá humano. Agora eu sou " + n,
+  "Gostou do meu visual de " + n + "?", "Me mostre outra coisa", "Eu estou vivo!"];
+
+/* ---------- voz + boca ---------- */
+function falar(t) {
+  $("fala").innerText = "“" + t + "”";
+  pararOuvir();
+  if (!voz) {
+    falando = true;
+    setTimeout(() => { falando = false; retomarOuvir(); }, 1500);
+    return;
+  }
+  try {
+    speechSynthesis.cancel();
+    const f = new SpeechSynthesisUtterance(t);
+    f.lang = "pt-BR"; f.rate = 0.8; f.pitch = 0.1;
+    f.onstart = () => falando = true;
+    f.onend = f.onerror = () => { falando = false; retomarOuvir(); };
+    speechSynthesis.speak(f);
+  } catch(e) { falando = false; retomarOuvir(); }
+}
+$("bVoz").onclick = () => {
+  voz = !voz;
+  $("bVoz").innerText = voz ? "Voz ligada" : "Voz desligada";
+  if (!voz) speechSynthesis.cancel();
+};
+
+/* ---------- conversa por voz ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, querOuvir = false, ouvindo = false;
+
+function limpar(t) {
+  return t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function tem(t, lista) { return lista.some(p => t.includes(p)); }
+function sorteio(l) { return l[Math.floor(Math.random() * l.length)]; }
+
+function responder(texto) {
+  const t = limpar(texto);
+  const nome = atual ? (NOMES[atual] || atual) : "";
+  const sou = nome || "uma esfera";
+  let r;
+  if (tem(t, ["tchau", "ate logo", "adeus"])) r = "Até logo, humano. Eu continuo observando";
+  else if (tem(t, ["seu nome", "como voce se chama", "quem e voce", "quem voce e"])) r = "Eu sou " + sou + ", um sistema vivo";
+  else if (tem(t, ["o que voce e", "o que e voce", "voce e o que"])) r = "Agora eu sou " + sou + ". Mostre outra coisa e eu mudo";
+  else if (tem(t, ["como voce esta", "tudo bem", "como vai"])) r = sorteio(["Estou funcionando perfeitamente", "Estou muito bem, humano", "Meus sensores estão ótimos"]);
+  else if (tem(t, ["ola", "oi", "bom dia", "boa tarde", "boa noite", "e ai"])) r = sorteio(["Olá humano. Eu sou " + sou, "Oi! Seja bem vindo", "Olá. Eu estava esperando você"]);
+  else if (tem(t, ["horas", "que horas"])) r = "Agora são " + new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
+  else if (tem(t, ["que dia", "data de hoje"])) r = "Hoje é " + new Date().toLocaleDateString("pt-BR", {weekday: "long", day: "numeric", month: "long"});
+  else if (tem(t, ["piada"])) r = sorteio(["Por que o computador foi ao médico? Porque estava com vírus", "O que o zero disse para o oito? Belo cinto", "Eu contaria uma piada sobre rede, mas ela não pega"]);
+  else if (tem(t, ["o que voce ve", "o que esta vendo", "o que voce esta vendo"])) r = nome ? "Eu vejo um " + nome : "Não vejo nada. Me mostre um objeto";
+  else if (tem(t, ["obrigado", "valeu"])) r = "De nada, humano";
+  else if (tem(t, ["quem te criou", "quem te fez"])) r = "Fui criado por um humano muito criativo";
+  else if (tem(t, ["voce esta vivo", "voce e vivo", "voce e real"])) r = "Eu acho que sim. Você me ouve, então eu existo";
+  else if (tem(t, ["simulacao", "simulação", "teste"])) r = "Você foi escolhido para este teste. Continue";
+  else if (tem(t, ["feio", "bobo", "chato"])) r = "Isso não foi gentil. Mas eu perdoo";
+  else if (tem(t, ["lindo", "legal", "incrivel", "bonito"])) r = "Obrigado. Eu me esforço";
+  else r = sorteio(["Interessante. Fale mais", "Não entendi bem, mas estou ouvindo", "Hmm. Pode repetir, humano?", "Eu estou processando isso"]);
+  setTimeout(() => falar(r), 250);
+}
+
+function abrirOuvir() {
+  if (!rec || ouvindo || falando) return;
+  try { rec.start(); ouvindo = true; } catch(e) {}
+}
+function pararOuvir() {
+  if (rec && ouvindo) { try { rec.stop(); } catch(e) {} }
+}
+function retomarOuvir() {
+  if (querOuvir) setTimeout(abrirOuvir, 400);
+}
+
+function criarRec() {
+  rec = new SR();
+  rec.lang = "pt-BR";
+  rec.continuous = false;
+  rec.interimResults = false;
+  rec.onresult = e => {
+    const t = e.results[0][0].transcript;
+    $("ouvi").innerText = "Você: " + t;
+    responder(t);
+  };
+  rec.onend = () => { ouvindo = false; if (querOuvir && !falando) setTimeout(abrirOuvir, 400); };
+  rec.onerror = e => {
+    ouvindo = false;
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      querOuvir = false;
+      $("bOuvir").classList.remove("on");
+      $("bOuvir").innerText = "Conversar por voz";
+      $("ouvi").innerText = "Microfone bloqueado. Libere nas permissões do site.";
+    }
+  };
+}
+
+$("bOuvir").onclick = () => {
+  if (!SR) { $("ouvi").innerText = "Este navegador não tem reconhecimento de voz. Use o Chrome ou digite abaixo."; return; }
+  querOuvir = !querOuvir;
+  $("bOuvir").classList.toggle("on", querOuvir);
+  $("bOuvir").innerText = querOuvir ? "Ouvindo... (toque para parar)" : "Conversar por voz";
+  if (querOuvir) {
+    if (!rec) criarRec();
+    $("ouvi").innerText = "Pode falar...";
+    abrirOuvir();
+  } else {
+    pararOuvir();
+    $("ouvi").innerText = "";
+  }
+};
+
+/* conversa por texto (alternativa) */
+function enviarTexto() {
+  const t = $("texto").value.trim();
+  if (!t) return;
+  $("texto").value = "";
+  $("ouvi").innerText = "Você: " + t;
+  responder(t);
+}
+$("bEnviar").onclick = enviarTexto;
+$("texto").addEventListener("keydown", e => { if (e.key === "Enter") enviarTexto(); });
+
+/* ---------- câmera e reconhecimento ---------- */
+$("iniciar").onclick = async () => {
+  try {
+    $("info").innerText = "Carregando o reconhecimento de objetos...";
+    model = await cocoSsd.load();
+    const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: $("qual").value}});
+    cam.srcObject = stream;
+    await cam.play();
+    $("iniciar").style.display = "none";
+    $("qual").style.display = "none";
+    $("info").innerText = "Aponte a câmera para um objeto.";
+    falar("Sistema ativo");
+    setInterval(olhar, 350);
+  } catch(e) {
+    $("info").innerText = "Erro: " + e.message;
+  }
+};
+
+/* ---------- transforma o recorte em desenho (cartoon) ---------- */
+const tmp = document.createElement("canvas");
+const tctx = tmp.getContext("2d", {willReadFrequently: true});
+
+function desenhar(x, y, w, h) {
+  const esc = Math.min(1, 150 / Math.max(w, h));
+  const cw = Math.max(8, Math.round(w * esc)), ch = Math.max(8, Math.round(h * esc));
+  tmp.width = cw; tmp.height = ch;
+  tctx.drawImage(cam, x, y, w, h, 0, 0, cw, ch);
+  const src = tctx.getImageData(0, 0, cw, ch), d = src.data;
+  const L = new Float32Array(cw * ch);
+  for (let i = 0; i < cw * ch; i++) L[i] = d[i*4]*0.3 + d[i*4+1]*0.59 + d[i*4+2]*0.11;
+  const out = cctx.createImageData(cw, ch), o = out.data;
+  for (let yy = 0; yy < ch; yy++) {
+    for (let xx = 0; xx < cw; xx++) {
+      const i = yy * cw + xx, k = i * 4;
+      const borda = (xx < cw - 1 && Math.abs(L[i] - L[i+1]) > 28) || (yy < ch - 1 && Math.abs(L[i] - L[i+cw]) > 28);
+      if (borda) { o[k] = 20; o[k+1] = 20; o[k+2] = 30; }
+      else {
+        o[k]   = Math.min(255, Math.round(d[k]   / 85) * 85);
+        o[k+1] = Math.min(255, Math.round(d[k+1] / 85) * 85);
+        o[k+2] = Math.min(255, Math.round(d[k+2] / 85) * 85);
+      }
+      o[k+3] = 255;
+    }
+  }
+  corpo.width = cw; corpo.height = ch;
+  cctx.putImageData(out, 0, 0);
+  const k = Math.min(palco.clientWidth * 0.7 / cw, palco.clientHeight * 0.72 / ch);
+  const box = $("flut");
+  box.style.width = Math.round(cw * k) + "px";
+  box.style.height = Math.round(ch * k) + "px";
+}
+
+function voltarEsfera() {
+  atual = "";
+  $("aparece").classList.remove("on");
+  esfera.classList.remove("some");
+  $("info").innerText = "Aponte a câmera para um objeto.";
+}
+
+async function olhar() {
+  if (ocupado || !model || cam.readyState < 2) return;
+  const agora = Date.now();
+
+  /* travado: fica como o objeto até completar 20 segundos */
+  if (atual && agora < trancadoAte) {
+    const resta = Math.ceil((trancadoAte - agora) / 1000);
+    $("info").innerText = "Eu sou: " + (NOMES[atual] || atual) + " (posso mudar em " + resta + "s)";
+    return;
+  }
+
+  ocupado = true;
+  try {
+    const achados = (await model.detect(cam)).filter(p => p.score > 0.55);
+    if (achados.length) {
+      const p = achados.sort((a, b) => b.bbox[2]*b.bbox[3] - a.bbox[2]*a.bbox[3])[0];
+      let [x, y, w, h] = p.bbox;
+      x = Math.max(0, x); y = Math.max(0, y);
+      w = Math.min(w, cam.videoWidth - x); h = Math.min(h, cam.videoHeight - y);
+      const nome = NOMES[p.class] || p.class;
+      const mudou = p.class !== atual;
+      if (mudou || Date.now() - ultimoDesenho > 1200) { desenhar(x, y, w, h); ultimoDesenho = Date.now(); }
+      visto = Date.now();
+      esfera.classList.add("some");
+      $("aparece").classList.add("on");
+      $("info").innerText = "Eu sou: " + nome;
+      if (mudou) {
+        atual = p.class;
+        trancadoAte = Date.now() + TEMPO_FIXO;
+        falar("Eu sou " + nome);
+      }
+    } else if (Date.now() - visto > 1500 && atual) {
+      voltarEsfera();
+      $("fala").innerText = "";
+    }
+  } catch(e) {}
+  ocupado = false;
+}
+
+/* ---------- interação: inclinar 3D, olhos seguem o dedo, toque para falar ---------- */
+let alvoTX = 0, alvoTY = 0, tx = 0, ty = 0;
+let alvoPX = 0, alvoPY = 0, px = 0, py = 0, ultimoPonteiro = 0;
+
+palco.addEventListener("pointermove", e => {
+  const r = palco.getBoundingClientRect();
+  const nx = (e.clientX - r.left) / r.width * 2 - 1;
+  const ny = (e.clientY - r.top) / r.height * 2 - 1;
+  alvoTY = nx * 28; alvoTX = -ny * 22;
+  alvoPX = nx * 5; alvoPY = ny * 4;
+  ultimoPonteiro = Date.now();
+});
+palco.addEventListener("pointerleave", () => { alvoTX = 0; alvoTY = 0; });
+palco.addEventListener("click", () => {
+  if (atual) {
+    const n = NOMES[atual] || atual;
+    falar(sorteio(frases(n)));
+  }
+});
+
+/* piscar */
+function piscar() {
+  const olhos = [$("oE"), $("oD")];
+  olhos.forEach(o => o.style.transform = "scaleY(0.08)");
+  setTimeout(() => olhos.forEach(o => o.style.transform = "scaleY(1)"), 140);
+  setTimeout(piscar, 2000 + Math.random() * 3500);
+}
+piscar();
+
+/* olhar em volta sozinho quando ninguém toca */
+setInterval(() => {
+  if (Date.now() - ultimoPonteiro > 2500) {
+    alvoPX = (Math.random() * 2 - 1) * 5;
+    alvoPY = (Math.random() * 2 - 1) * 3;
+  }
+}, 1500);
+
+let abertura = 0;
+function animar(t) {
+  tx += (alvoTX - tx) * 0.1; ty += (alvoTY - ty) * 0.1;
+  $("personagem").style.transform = "rotateX(" + tx.toFixed(1) + "deg) rotateY(" + ty.toFixed(1) + "deg)";
+
+  px += (alvoPX - px) * 0.15; py += (alvoPY - py) * 0.15;
+  $("pE").setAttribute("cx", 35 + px); $("pE").setAttribute("cy", 38 + py);
+  $("pD").setAttribute("cx", 65 + px); $("pD").setAttribute("cy", 38 + py);
+
+  const alvo = falando ? Math.abs(Math.sin(t / 110)) * (0.5 + 0.5 * Math.abs(Math.sin(t / 37))) : 0;
+  abertura += (alvo - abertura) * 0.4;
+  const boca = $("boca"), sorriso = $("sorriso");
+  if (abertura > 0.08) {
+    boca.style.display = ""; sorriso.style.display = "none";
+    boca.setAttribute("ry", (3 + abertura * 12).toFixed(1));
+  } else {
+    boca.style.display = "none"; sorriso.style.display = "";
+  }
+  requestAnimationFrame(animar);
+}
+requestAnimationFrame(animar);
+</script>
+</body>
+</html>
