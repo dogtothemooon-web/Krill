@@ -5,61 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Segundos</title>
 <style>
-html{height:auto}
-body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee;box-sizing:border-box;min-height:100dvh}
-body::after{content:"";display:block;height:48px}
-#app{display:flex;flex-direction:column;height:calc(100vh - 32px);height:calc(100dvh - 32px)}
+html{height:100%}
+body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee;box-sizing:border-box;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 input,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
 button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
 #logo{display:block;flex-shrink:0;width:calc(100% + 32px);margin:-16px -16px 10px -16px;aspect-ratio:3/1;object-fit:cover;object-position:center 68%}
 #setup{flex-shrink:0}
 #status{flex-shrink:0;font-size:17px;margin:6px 0;min-height:22px}
-#messages{flex:1;min-height:80px;overflow-y:auto;overscroll-behavior:contain;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:6px 0}
+#messages{flex:1;min-height:80px;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:6px 0}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
 .mine{background:#174b75;text-align:right}
 .msg img{max-width:100%;max-height:260px;border-radius:6px;display:block;margin:4px 0}
 .row{display:flex;gap:8px;flex-shrink:0;padding-bottom:env(safe-area-inset-bottom,0px)}
-#emojiBtn{width:auto;background:#333;border:1px solid #444;font-size:20px;padding:8px 12px}
-#emojiPanel{display:none;flex-shrink:0;height:170px;overflow-y:auto;overscroll-behavior:contain;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:6px;margin:6px 0;flex-wrap:wrap;gap:2px;align-content:flex-start}
-#emojiPanel.aberto{display:flex}
-#emojiPanel button{width:12.5%;background:none;border:0;margin:0;padding:6px 0;font-size:24px;line-height:1.2}
+#sendPhoto{width:auto;background:#444}
 </style>
 </head>
 <body>
-
-<div id="app">
 
 <img id="logo" src="segundos.jpg" alt="Segundos">
 
 <div id="setup">
   <input id="token" type="password" placeholder="Token do bot (do @BotFather)" autocomplete="off" autocapitalize="off">
-  <input id="chat" placeholder="Chat ID" inputmode="numeric" autocomplete="off">
-  <button id="connect" type="button">Conectar</button>
+  <input id="chat" placeholder="Chat ID" inputmode="numeric">
+  <button id="connect">Conectar</button>
 </div>
 
 <div id="status"></div>
 
 <div id="messages"></div>
 
-<div id="emojiPanel"></div>
-
 <div class="row">
-  <button id="emojiBtn" type="button" disabled>😀</button>
   <input id="messageText" placeholder="Digite sua mensagem..." disabled>
-  <button id="sendMessage" type="button" style="width:auto" disabled>Enviar</button>
+  <button id="sendPhoto" disabled>📷</button>
+  <button id="sendMessage" style="width:auto" disabled>Enviar</button>
 </div>
-
-</div>
+<input id="photoFile" type="file" accept="image/*" hidden>
 
 <script>
 const $ = id => document.getElementById(id);
-
-/* mostra qualquer erro da página na tela */
-window.onerror = (msg) => { $("status").innerText = "Erro na página: " + msg; };
-window.addEventListener("unhandledrejection", ev => {
-  $("status").innerText = "Erro: " + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason);
-});
 
 let TOKEN = "", chat = "";
 let polling = false, pollTimer = null;
@@ -70,47 +54,15 @@ let ultimaAssinatura = "";
 let ultimoDigitando = 0;
 const agendadas = new Set();
 const apagadas = new Set();
+const minhas = new Set();
 const INICIO = Math.floor(Date.now() / 1000) - 5;
+
+/* false = o que você envia fica sem limite de tempo no Telegram de quem recebe */
+const APAGAR_ENVIADAS_NO_TELEGRAM = false;
 
 /* tempo até apagar: sorteado entre 10 e 15 segundos */
 const TEMPO_MIN = 10000;
 const TEMPO_MAX = 15000;
-
-/* ---------- emojis ---------- */
-const EMOJIS = ("😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😍 🥰 😘 😗 😋 😛 😜 🤪 😎 🤩 🥳 🤗 🤔 🤭 🤫 😐 😑 😶 🙄 😏 😬 😌 😔 😪 😴 😷 🤒 🤢 🤮 🥵 🥶 😵 🤯 😕 😟 🙁 😮 😲 😳 🥺 😢 😭 😱 😖 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👻 👽 🤖 " +
-  "👍 👎 👌 ✌ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 👋 🤚 ✋ 🖖 👏 🙌 🤝 🙏 💪 🫶 " +
-  "❤ 🧡 💛 💚 💙 💜 🖤 🤍 💔 💕 💞 💓 💗 💖 💘 💝 " +
-  "🔥 ✨ ⭐ 🌟 💫 💥 💯 ✅ ❌ ⚠ ❓ ❗ 🎉 🎊 🎁 🎂 🍕 🍔 🍟 🍺 🍻 ☕ " +
-  "🐶 🐱 🐭 🐰 🦊 🐻 🐼 🐸 🐵 🐔 🦄 🌹 🌻 🌈 ☀ 🌙 ⚡ ❄ 🌊 " +
-  "⚽ 🏀 🎮 🎵 🎶 📱 💻 🚗 ✈ 🏠 ⏰ 🔔 🔒 🔑 💰").split(" ");
-
-function montarEmojis() {
-  const painel = $("emojiPanel");
-  EMOJIS.forEach(e => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = e;
-    b.addEventListener("mousedown", ev => ev.preventDefault());
-    b.addEventListener("click", () => inserirEmoji(e));
-    painel.appendChild(b);
-  });
-}
-
-function inserirEmoji(e) {
-  const input = $("messageText");
-  if (input.disabled) return;
-  const ini = input.selectionStart != null ? input.selectionStart : input.value.length;
-  const fim = input.selectionEnd != null ? input.selectionEnd : input.value.length;
-  input.value = input.value.slice(0, ini) + e + input.value.slice(fim);
-  const pos = ini + e.length;
-  try { input.setSelectionRange(pos, pos); } catch(err) {}
-  input.focus();
-  input.dispatchEvent(new Event("input"));
-}
-
-function alternarEmojis() {
-  $("emojiPanel").classList.toggle("aberto");
-}
 
 function loadCfg() {
   try {
@@ -155,7 +107,7 @@ async function avisarDigitando() {
   } catch(e) {}
 }
 
-/* ---------- apagar automático (site + Telegram ao mesmo tempo) ---------- */
+/* ---------- apagar automático ---------- */
 function agendar(id, dataMs) {
   if (!id || agendadas.has(id)) return;
   agendadas.add(id);
@@ -167,37 +119,28 @@ function agendar(id, dataMs) {
 async function apagar(id) {
   apagadas.add(id);
   render();
-  for (let i = 0; i < 4; i++) {
-    try {
-      await tg("deleteMessage", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({chat_id: chat, message_id: id})
-      });
-      return;
-    } catch(e) {
-      if (/not found|can't be deleted/i.test(e.message)) return;
-      await new Promise(r => setTimeout(r, 1500));
-    }
-  }
+  if (minhas.has(id) && !APAGAR_ENVIADAS_NO_TELEGRAM) return;
+  try {
+    await tg("deleteMessage", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({chat_id: chat, message_id: id})
+    });
+  } catch(e) {}
 }
 
 /* ---------- conexão ---------- */
 async function conectar() {
-  $("status").innerText = "Conectando...";
-  $("connect").disabled = true;
   try {
-    await tg("getMe");
+    const d = await tg("getMe");
+    $("status").innerText = "Conectado como @" + d.result.username;
   } catch(e) {
-    $("status").innerText = "Não conectou: " + e.message;
-    $("connect").disabled = false;
+    $("status").innerText = "Token inválido ou sem internet: " + e.message;
     return false;
   }
-  $("connect").disabled = false;
-  $("status").innerText = "";
   $("messageText").disabled = false;
   $("sendMessage").disabled = false;
-  $("emojiBtn").disabled = false;
+  $("sendPhoto").disabled = false;
   carregarMensagens();
   clearInterval(pollTimer);
   pollTimer = setInterval(carregarMensagens, 3000);
@@ -217,6 +160,7 @@ async function enviarMensagem() {
       body: JSON.stringify({chat_id: chat, text})
     });
     const id = d.result.message_id;
+    minhas.add(id);
     enviadas.push({id, date: Math.floor(Date.now()/1000), text, mine: true});
     agendar(id, Date.now());
     input.value = "";
@@ -227,6 +171,33 @@ async function enviarMensagem() {
     $("status").innerText = "Erro: " + e.message;
   } finally {
     $("sendMessage").disabled = false;
+  }
+}
+
+/* ---------- enviar foto (o texto digitado vira legenda) ---------- */
+async function enviarFoto(file) {
+  if (!file) return;
+  const legenda = $("messageText").value.trim();
+  try {
+    $("sendPhoto").disabled = true;
+    $("status").innerText = "Enviando foto...";
+    const fd = new FormData();
+    fd.append("chat_id", chat);
+    fd.append("photo", file);
+    if (legenda) fd.append("caption", legenda);
+    const d = await tg("sendPhoto", {method: "POST", body: fd});
+    const id = d.result.message_id;
+    minhas.add(id);
+    enviadas.push({id, date: Math.floor(Date.now()/1000), text: legenda, mine: true, url: URL.createObjectURL(file)});
+    agendar(id, Date.now());
+    $("messageText").value = "";
+    $("status").innerText = "Foto enviada.";
+    carregarMensagens();
+  } catch(e) {
+    $("status").innerText = "Erro ao enviar foto: " + e.message;
+  } finally {
+    $("sendPhoto").disabled = false;
+    $("photoFile").value = "";
   }
 }
 
@@ -271,16 +242,13 @@ async function carregarMensagens() {
   if (polling) return;
   polling = true;
   try {
-    const d = await tg("getUpdates?limit=100&offset=-100");
-    const todasDoChat = d.result
+    const d = await tg("getUpdates?limit=100");
+    const msgs = d.result
       .map(u => u.message)
-      .filter(m => m && String(m.chat.id) === chat && !apagadas.has(m.message_id));
-
-    todasDoChat.forEach(m => agendar(m.message_id, m.date * 1000));
+      .filter(m => m && (m.text || m.photo) && String(m.chat.id) === chat && m.date >= INICIO && !apagadas.has(m.message_id));
 
     const recebidas = [];
-    for (const m of todasDoChat) {
-      if (!(m.text || m.photo) || m.date < INICIO) continue;
+    for (const m of msgs) {
       const item = {id: m.message_id, date: m.date, text: m.text || m.caption || "", mine: false};
       if (m.photo) {
         const maior = m.photo[m.photo.length - 1];
@@ -288,6 +256,7 @@ async function carregarMensagens() {
         catch(e) { item.text += " [foto indisponível]"; }
       }
       recebidas.push(item);
+      agendar(item.id, m.date * 1000);
     }
 
     todas = recebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
@@ -299,13 +268,13 @@ async function carregarMensagens() {
   }
 }
 
-$("connect").addEventListener("click", () => { if (readCfg()) conectar(); });
-$("sendMessage").addEventListener("click", enviarMensagem);
-$("emojiBtn").addEventListener("click", alternarEmojis);
+$("connect").onclick = () => { if (readCfg()) conectar(); };
+$("sendMessage").onclick = enviarMensagem;
+$("sendPhoto").onclick = () => $("photoFile").click();
+$("photoFile").addEventListener("change", e => enviarFoto(e.target.files[0]));
 $("messageText").addEventListener("input", avisarDigitando);
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 
-try { montarEmojis(); } catch(e) {}
 loadCfg();
 </script>
 </body>
