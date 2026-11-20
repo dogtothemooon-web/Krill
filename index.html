@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chat Telegram</title>
+<title>Segundos</title>
 <style>
 body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee}
 input,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
 button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
+#logo{display:block;width:100%;max-height:220px;object-fit:cover;object-position:top;border-radius:12px;margin-bottom:8px}
 #status{font-size:17px;margin:10px 0;min-height:22px}
 #messages{height:50vh;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
@@ -19,7 +20,7 @@ button:disabled{opacity:.5}
 </head>
 <body>
 
-<h2>Chat Telegram</h2>
+<img id="logo" src="segundos.jpg" alt="Segundos">
 
 <div id="setup">
   <input id="token" type="password" placeholder="Token do bot (do @BotFather)" autocomplete="off" autocapitalize="off">
@@ -50,9 +51,9 @@ const agendadas = new Set();
 const apagadas = new Set();
 const INICIO = Math.floor(Date.now() / 1000) - 5;
 
-/* tempo até apagar: sorteado entre 8 e 10 segundos */
-const TEMPO_MIN = 8000;
-const TEMPO_MAX = 10000;
+/* tempo até apagar: sorteado entre 10 e 15 segundos */
+const TEMPO_MIN = 10000;
+const TEMPO_MAX = 15000;
 
 function loadCfg() {
   try {
