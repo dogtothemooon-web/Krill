@@ -13,10 +13,7 @@ button:disabled{opacity:.5}
 #messages{height:50vh;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
 .mine{background:#174b75;text-align:right}
-.msg img{max-width:100%;max-height:260px;border-radius:6px;display:block;margin:4px 0}
-.mine img{margin-left:auto}
 .row{display:flex;gap:8px}
-#photoBtn{width:auto;background:#444}
 </style>
 </head>
 <body>
@@ -34,11 +31,9 @@ button:disabled{opacity:.5}
 <div id="messages"></div>
 
 <div class="row">
-  <button id="photoBtn" disabled>📷</button>
   <input id="messageText" placeholder="Digite sua mensagem..." disabled>
   <button id="sendMessage" style="width:auto" disabled>Enviar</button>
 </div>
-<input id="photoInput" type="file" accept="image/*" style="display:none">
 
 <script>
 const $ = id => document.getElementById(id);
@@ -46,8 +41,6 @@ const $ = id => document.getElementById(id);
 let TOKEN = "", chat = "";
 let polling = false, pollTimer = null;
 let enviadas = [];
-let fileUrls = {};
-let ultimaAssinatura = "";
 const INICIO = Math.floor(Date.now() / 1000) - 5;
 
 function loadCfg() {
@@ -88,7 +81,6 @@ async function conectar() {
   }
   $("messageText").disabled = false;
   $("sendMessage").disabled = false;
-  $("photoBtn").disabled = false;
   carregarMensagens();
   clearInterval(pollTimer);
   pollTimer = setInterval(carregarMensagens, 3000);
@@ -117,50 +109,7 @@ async function enviarMensagem() {
   }
 }
 
-/* ---------- enviar foto ---------- */
-async function enviarFoto(arquivo) {
-  if (!arquivo) return;
-  const legenda = $("messageText").value.trim();
-  try {
-    $("photoBtn").disabled = true;
-    $("status").innerText = "Enviando foto...";
-    const form = new FormData();
-    form.append("chat_id", chat);
-    form.append("photo", arquivo, arquivo.name || "foto.jpg");
-    if (legenda) form.append("caption", legenda);
-    await tg("sendPhoto", {method: "POST", body: form});
-    enviadas.push({
-      date: Math.floor(Date.now()/1000),
-      text: legenda,
-      mine: true,
-      localUrl: URL.createObjectURL(arquivo)
-    });
-    $("messageText").value = "";
-    $("status").innerText = "Foto enviada ao Telegram.";
-    carregarMensagens();
-  } catch(e) {
-    $("status").innerText = "Erro ao enviar foto: " + e.message;
-  } finally {
-    $("photoBtn").disabled = false;
-    $("photoInput").value = "";
-  }
-}
-
-/* ---------- receber foto ---------- */
-async function resolverFoto(fileId) {
-  if (fileUrls[fileId]) return fileUrls[fileId];
-  const d = await tg("getFile?file_id=" + encodeURIComponent(fileId));
-  const url = "https://api.telegram.org/file/bot" + TOKEN + "/" + d.result.file_path;
-  fileUrls[fileId] = url;
-  return url;
-}
-
-/* ---------- mostrar ---------- */
 function mostrarMensagens(lista) {
-  const assinatura = lista.map(m => m.date + "|" + m.text + "|" + (m.url || "")).join("§");
-  if (assinatura === ultimaAssinatura) return;
-  ultimaAssinatura = assinatura;
-
   const box = $("messages");
   const noFim = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.innerHTML = "";
@@ -168,15 +117,7 @@ function mostrarMensagens(lista) {
     const div = document.createElement("div");
     div.className = "msg" + (m.mine ? " mine" : "");
     const hora = new Date(m.date * 1000).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
-    const topo = document.createElement("div");
-    topo.textContent = hora + (m.text ? " — " + m.text : "");
-    div.appendChild(topo);
-    if (m.url) {
-      const img = document.createElement("img");
-      img.src = m.url;
-      img.onclick = () => window.open(m.url, "_blank");
-      div.appendChild(img);
-    }
+    div.textContent = hora + " — " + m.text;
     box.appendChild(div);
   });
   if (noFim) box.scrollTop = box.scrollHeight;
@@ -187,23 +128,11 @@ async function carregarMensagens() {
   polling = true;
   try {
     const d = await tg("getUpdates?limit=100");
-    const msgs = d.result
+    const recebidas = d.result
       .map(u => u.message)
-      .filter(m => m && (m.text || m.photo) && String(m.chat.id) === chat && m.date >= INICIO);
-
-    const recebidas = [];
-    for (const m of msgs) {
-      const item = {date: m.date, text: m.text || m.caption || "", mine: false};
-      if (m.photo) {
-        const maior = m.photo[m.photo.length - 1];
-        try { item.url = await resolverFoto(maior.file_id); }
-        catch(e) { item.text += " [foto indisponível]"; }
-      }
-      recebidas.push(item);
-    }
-
-    const minhas = enviadas.map(e => ({date: e.date, text: e.text, mine: true, url: e.localUrl}));
-    const tudo = recebidas.concat(minhas).sort((a, b) => a.date - b.date).slice(-40);
+      .filter(m => m && m.text && String(m.chat.id) === chat && m.date >= INICIO)
+      .map(m => ({date: m.date, text: m.text, mine: false}));
+    const tudo = recebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
     mostrarMensagens(tudo);
   } catch(e) {
     $("status").innerText = "Erro nas mensagens: " + e.message;
@@ -214,8 +143,6 @@ async function carregarMensagens() {
 
 $("connect").onclick = () => { if (readCfg()) conectar(); };
 $("sendMessage").onclick = enviarMensagem;
-$("photoBtn").onclick = () => $("photoInput").click();
-$("photoInput").onchange = e => enviarFoto(e.target.files[0]);
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 
 loadCfg();
