@@ -14,9 +14,7 @@ button:disabled{opacity:.5}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
 .mine{background:#174b75;text-align:right}
 .msg img{max-width:100%;max-height:260px;border-radius:6px;display:block;margin:4px 0}
-.mine img{margin-left:auto}
 .row{display:flex;gap:8px}
-#photoBtn{width:auto;background:#444}
 </style>
 </head>
 <body>
@@ -34,11 +32,9 @@ button:disabled{opacity:.5}
 <div id="messages"></div>
 
 <div class="row">
-  <button id="photoBtn" disabled>📷</button>
   <input id="messageText" placeholder="Digite sua mensagem..." disabled>
   <button id="sendMessage" style="width:auto" disabled>Enviar</button>
 </div>
-<input id="photoInput" type="file" accept="image/*" style="display:none">
 
 <script>
 const $ = id => document.getElementById(id);
@@ -117,7 +113,6 @@ async function conectar() {
   }
   $("messageText").disabled = false;
   $("sendMessage").disabled = false;
-  $("photoBtn").disabled = false;
   carregarMensagens();
   clearInterval(pollTimer);
   pollTimer = setInterval(carregarMensagens, 3000);
@@ -146,38 +141,6 @@ async function enviarMensagem() {
     $("status").innerText = "Erro: " + e.message;
   } finally {
     $("sendMessage").disabled = false;
-  }
-}
-
-/* ---------- enviar foto ---------- */
-async function enviarFoto(arquivo) {
-  if (!arquivo) return;
-  const legenda = $("messageText").value.trim();
-  try {
-    $("photoBtn").disabled = true;
-    $("status").innerText = "Enviando foto...";
-    const form = new FormData();
-    form.append("chat_id", chat);
-    form.append("photo", arquivo, arquivo.name || "foto.jpg");
-    if (legenda) form.append("caption", legenda);
-    const d = await tg("sendPhoto", {method: "POST", body: form});
-    const id = d.result.message_id;
-    enviadas.push({
-      id,
-      date: Math.floor(Date.now()/1000),
-      text: legenda,
-      mine: true,
-      localUrl: URL.createObjectURL(arquivo)
-    });
-    agendar(id, Date.now());
-    $("messageText").value = "";
-    $("status").innerText = "Foto enviada.";
-    carregarMensagens();
-  } catch(e) {
-    $("status").innerText = "Erro ao enviar foto: " + e.message;
-  } finally {
-    $("photoBtn").disabled = false;
-    $("photoInput").value = "";
   }
 }
 
@@ -250,8 +213,6 @@ async function carregarMensagens() {
 
 $("connect").onclick = () => { if (readCfg()) conectar(); };
 $("sendMessage").onclick = enviarMensagem;
-$("photoBtn").onclick = () => $("photoInput").click();
-$("photoInput").onchange = e => enviarFoto(e.target.files[0]);
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 
 loadCfg();
