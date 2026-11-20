@@ -34,8 +34,8 @@ button:disabled{opacity:.5}
 
 <div id="setup">
   <input id="token" type="password" placeholder="Token do bot (do @BotFather)" autocomplete="off" autocapitalize="off">
-  <input id="chat" placeholder="Chat ID" inputmode="numeric">
-  <button id="connect">Conectar</button>
+  <input id="chat" placeholder="Chat ID" inputmode="numeric" autocomplete="off">
+  <button id="connect" type="button">Conectar</button>
 </div>
 
 <div id="status"></div>
@@ -45,15 +45,21 @@ button:disabled{opacity:.5}
 <div id="emojiPanel"></div>
 
 <div class="row">
-  <button id="emojiBtn" disabled>😀</button>
+  <button id="emojiBtn" type="button" disabled>😀</button>
   <input id="messageText" placeholder="Digite sua mensagem..." disabled>
-  <button id="sendMessage" style="width:auto" disabled>Enviar</button>
+  <button id="sendMessage" type="button" style="width:auto" disabled>Enviar</button>
 </div>
 
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
+
+/* mostra qualquer erro da página na tela */
+window.onerror = (msg) => { $("status").innerText = "Erro na página: " + msg; };
+window.addEventListener("unhandledrejection", ev => {
+  $("status").innerText = "Erro: " + (ev.reason && ev.reason.message ? ev.reason.message : ev.reason);
+});
 
 let TOKEN = "", chat = "";
 let polling = false, pollTimer = null;
@@ -84,9 +90,7 @@ function montarEmojis() {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = e;
-    /* não deixa o teclado fechar ao tocar no emoji */
     b.addEventListener("mousedown", ev => ev.preventDefault());
-    b.addEventListener("touchstart", ev => ev.preventDefault(), {passive: false});
     b.addEventListener("click", () => inserirEmoji(e));
     painel.appendChild(b);
   });
@@ -95,8 +99,8 @@ function montarEmojis() {
 function inserirEmoji(e) {
   const input = $("messageText");
   if (input.disabled) return;
-  const ini = input.selectionStart ?? input.value.length;
-  const fim = input.selectionEnd ?? input.value.length;
+  const ini = input.selectionStart != null ? input.selectionStart : input.value.length;
+  const fim = input.selectionEnd != null ? input.selectionEnd : input.value.length;
   input.value = input.value.slice(0, ini) + e + input.value.slice(fim);
   const pos = ini + e.length;
   try { input.setSelectionRange(pos, pos); } catch(err) {}
@@ -161,7 +165,6 @@ function agendar(id, dataMs) {
 }
 
 async function apagar(id) {
-  /* some do site e do Telegram no mesmo instante */
   apagadas.add(id);
   render();
   for (let i = 0; i < 4; i++) {
@@ -181,13 +184,17 @@ async function apagar(id) {
 
 /* ---------- conexão ---------- */
 async function conectar() {
+  $("status").innerText = "Conectando...";
+  $("connect").disabled = true;
   try {
     await tg("getMe");
-    $("status").innerText = "";
   } catch(e) {
-    $("status").innerText = "Token inválido ou sem internet: " + e.message;
+    $("status").innerText = "Não conectou: " + e.message;
+    $("connect").disabled = false;
     return false;
   }
+  $("connect").disabled = false;
+  $("status").innerText = "";
   $("messageText").disabled = false;
   $("sendMessage").disabled = false;
   $("emojiBtn").disabled = false;
@@ -269,7 +276,6 @@ async function carregarMensagens() {
       .map(u => u.message)
       .filter(m => m && String(m.chat.id) === chat && !apagadas.has(m.message_id));
 
-    /* agenda a exclusão no Telegram de TODAS as mensagens do chat (inclusive antigas) */
     todasDoChat.forEach(m => agendar(m.message_id, m.date * 1000));
 
     const recebidas = [];
@@ -293,10 +299,14 @@ async function carregarMensagens() {
   }
 }
 
-$("connect").onclick = () => { if (readCfg()) conectar(); };
-$("sendMessage").onclick = enviarMensagem;
-$("emojiBtn").onclick = alternarEmojis;
+$("connect").addEventListener("click", () => { if (readCfg()) conectar(); });
+$("sendMessage").addEventListener("click", enviarMensagem);
+$("emojiBtn").addEventListener("click", alternarEmojis);
 $("messageText").addEventListener("input", avisarDigitando);
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 
-mo
+try { montarEmojis(); } catch(e) {}
+loadCfg();
+</script>
+</body>
+</html>
