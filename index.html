@@ -45,6 +45,7 @@ let enviadas = [];
 let todas = [];
 let fileUrls = {};
 let ultimaAssinatura = "";
+let ultimoDigitando = 0;
 const agendadas = new Set();
 const apagadas = new Set();
 const INICIO = Math.floor(Date.now() / 1000) - 5;
@@ -79,6 +80,21 @@ async function tg(metodo, opcoes = {}) {
   try { d = await r.json(); } catch(e) {}
   if (!d.ok) throw new Error(d.description || "Erro na comunicação (" + r.status + ")");
   return d;
+}
+
+/* ---------- "digitando..." no Telegram ---------- */
+async function avisarDigitando() {
+  if (!TOKEN || $("messageText").disabled) return;
+  if (!$("messageText").value.trim()) return;
+  if (Date.now() - ultimoDigitando < 4000) return;
+  ultimoDigitando = Date.now();
+  try {
+    await tg("sendChatAction", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({chat_id: chat, action: "typing"})
+    });
+  } catch(e) {}
 }
 
 /* ---------- apagar automático ---------- */
@@ -135,6 +151,7 @@ async function enviarMensagem() {
     enviadas.push({id, date: Math.floor(Date.now()/1000), text, mine: true});
     agendar(id, Date.now());
     input.value = "";
+    ultimoDigitando = 0;
     $("status").innerText = "Mensagem enviada.";
     carregarMensagens();
   } catch(e) {
@@ -213,6 +230,7 @@ async function carregarMensagens() {
 
 $("connect").onclick = () => { if (readCfg()) conectar(); };
 $("sendMessage").onclick = enviarMensagem;
+$("messageText").addEventListener("input", avisarDigitando);
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 
 loadCfg();
