@@ -3,50 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Alarme de movimento</title>
+<title>Chat Telegram</title>
 <style>
 body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee}
-input,select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
+input,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
 button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
-button.sec{background:#444}
-video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
-#telaPreta{display:none;width:100%;aspect-ratio:3/4;background:#000000;border-radius:8px;margin-top:8px;align-items:center;justify-content:center;overflow:hidden}
-#telaPreta img{max-width:100%;max-height:100%;object-fit:contain;transition:filter .4s}
-#telaPreta img.alerta{filter:hue-rotate(240deg) saturate(1.5) drop-shadow(0 0 20px red)}
-#telaPreta img.falando{animation:pulsa .6s ease-in-out infinite}
-@keyframes pulsa{50%{transform:scale(1.06)}}
 #status{font-size:17px;margin:10px 0;min-height:22px}
-#messages{height:250px;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0}
+#messages{height:50vh;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
 .mine{background:#174b75;text-align:right}
-.erro{background:#7a1f1f}
 .row{display:flex;gap:8px}
 </style>
 </head>
 <body>
 
-<h2>Alarme de movimento</h2>
+<h2>Chat Telegram</h2>
 
 <div id="setup">
   <input id="token" type="password" placeholder="Token do bot (do @BotFather)" autocomplete="off" autocapitalize="off">
   <input id="chat" placeholder="Chat ID" inputmode="numeric">
-  <select id="cam">
-    <option value="user">Câmera frontal</option>
-  </select>
-  <div class="row">
-    <button id="connect" class="sec">Só mensagens</button>
-    <button id="go">Iniciar alarme</button>
-  </div>
+  <button id="connect">Conectar</button>
 </div>
 
-<video id="v" playsinline muted></video>
-<div id="telaPreta"><img id="esfera" src="esfera.gif" alt="esfera"></div>
 <div id="status"></div>
 
-<button id="recordAudio" style="display:none;background:#16803c">Gravar áudio por 10 segundos</button>
-
-<h3>Mensagens do Telegram</h3>
 <div id="messages"></div>
 
 <div class="row">
@@ -58,85 +39,10 @@ video{position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:
 const $ = id => document.getElementById(id);
 
 let TOKEN = "", chat = "";
-let prev = null, ultimo = 0, polling = false, pollTimer = null, alarmTimer = null;
+let polling = false, pollTimer = null;
 let enviadas = [];
-let ultimoMov = 0, ultimaFala = 0;
-let buscandoLocal = false;
-let faladas = new Set();
-let offset = 0;
-let todasRecebidas = [];
-let conectadoEm = 0;
 const INICIO = Math.floor(Date.now() / 1000) - 5;
 
-const LIMITE = 3000;
-const INTERVALO = 10000;
-const INTERVALO_FALA = 15000;
-
-/* ---------- frases que a esfera fala ao detectar movimento ---------- */
-const FRASES = [
-  "Movimento detectado",
-  "Eu estou vendo você",
-  "Identifiquei uma presença",
-  "Você não deveria estar aqui",
-  "Alerta. Intruso detectado",
-  "Estou te observando"
-];
-
-/* ---------- voz de robô da esfera (com pulso) ---------- */
-function falar(texto) {
-  try {
-    const esfera = $("esfera");
-    speechSynthesis.cancel();
-    const palavras = texto.split(" ").filter(Boolean);
-    palavras.forEach((palavra, i) => {
-      const fala = new SpeechSynthesisUtterance(palavra);
-      fala.lang = "pt-BR";
-      fala.rate = 0.9;
-      fala.pitch = 0.3;
-      if (i === 0) fala.onstart = () => esfera.classList.add("falando");
-      if (i === palavras.length - 1) {
-        fala.onend = () => esfera.classList.remove("falando");
-        fala.onerror = () => esfera.classList.remove("falando");
-      }
-      speechSynthesis.speak(fala);
-    });
-  } catch(e) {}
-}
-
-/* ---------- localização: a esfera fala onde você está ---------- */
-function falarLocal() {
-  if (buscandoLocal) return;
-  if (!navigator.geolocation) {
-    falar("Localização não disponível neste aparelho");
-    return;
-  }
-  buscandoLocal = true;
-  $("status").innerText = "Identificando localização...";
-  navigator.geolocation.getCurrentPosition(async pos => {
-    try {
-      const {latitude, longitude} = pos.coords;
-      const r = await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=pt-BR&lat=" + latitude + "&lon=" + longitude);
-      const d = await r.json();
-      const a = d.address || {};
-      const lugar = [a.road, a.suburb || a.neighbourhood, a.city || a.town || a.village, a.state]
-        .filter(Boolean).join(", ");
-      if (!lugar) throw new Error("sem endereço");
-      $("status").innerText = "Local: " + lugar;
-      falar("Seja bem vindo. Localização identificada. Você está em " + lugar);
-    } catch(e) {
-      $("status").innerText = "Não consegui identificar o local.";
-      falar("Não consegui identificar o local");
-    } finally {
-      buscandoLocal = false;
-    }
-  }, () => {
-    buscandoLocal = false;
-    $("status").innerText = "Localização não autorizada.";
-    falar("Localização não autorizada");
-  }, {enableHighAccuracy: true, timeout: 10000});
-}
-
-/* ---------- configuração salva só neste aparelho ---------- */
 function loadCfg() {
   try {
     const c = JSON.parse(localStorage.getItem("alarme_cfg2") || "{}");
@@ -157,7 +63,6 @@ function readCfg() {
   return true;
 }
 
-/* ---------- Telegram direto ---------- */
 async function tg(metodo, opcoes = {}) {
   const r = await fetch("https://api.telegram.org/bot" + TOKEN + "/" + metodo, opcoes);
   let d = {};
@@ -166,30 +71,22 @@ async function tg(metodo, opcoes = {}) {
   return d;
 }
 
-async function testarBot() {
-  const d = await tg("getMe");
-  $("status").innerText = "Conectado como @" + d.result.username;
-}
-
-/* ---------- mensagens ---------- */
 async function conectar() {
   try {
-    await testarBot();
+    const d = await tg("getMe");
+    $("status").innerText = "Conectado como @" + d.result.username;
   } catch(e) {
     $("status").innerText = "Token inválido ou sem internet: " + e.message;
     return false;
   }
-  try { await tg("deleteWebhook"); } catch(e) {}
-  conectadoEm = Math.floor(Date.now() / 1000) - 2;
   $("messageText").disabled = false;
   $("sendMessage").disabled = false;
   carregarMensagens();
   clearInterval(pollTimer);
-  pollTimer = setInterval(carregarMensagens, 2000);
+  pollTimer = setInterval(carregarMensagens, 3000);
   return true;
 }
 
-/* mensagem digitada na página (a pessoa na frente da esfera) vai para o seu Telegram */
 async function enviarMensagem() {
   const input = $("messageText");
   const text = input.value.trim();
@@ -218,7 +115,7 @@ function mostrarMensagens(lista) {
   box.innerHTML = "";
   lista.forEach(m => {
     const div = document.createElement("div");
-    div.className = "msg" + (m.mine ? " mine" : "") + (m.erro ? " erro" : "");
+    div.className = "msg" + (m.mine ? " mine" : "");
     const hora = new Date(m.date * 1000).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"});
     div.textContent = hora + " — " + m.text;
     box.appendChild(div);
@@ -230,171 +127,23 @@ async function carregarMensagens() {
   if (polling) return;
   polling = true;
   try {
-    const d = await tg("getUpdates?limit=100&offset=" + offset);
-
-    d.result.forEach(u => {
-      offset = u.update_id + 1;
-      const m = u.message;
-      if (m && m.text && String(m.chat.id) === chat && m.date >= INICIO) {
-        todasRecebidas.push({id: m.message_id, date: m.date, text: m.text, mine: false});
-      }
-    });
-
-    /* cada mensagem nova do Telegram aparece no chat E é falada pela esfera */
-    const novas = todasRecebidas.filter(m => !faladas.has(m.id));
-    novas.forEach(m => faladas.add(m.id));
-    const paraFalar = novas.filter(m => m.date >= conectadoEm);
-    if (paraFalar.length) {
-      const texto = paraFalar.map(m => m.text).join(". ").slice(0, 300);
-      falar(texto);
-    }
-
-    const tudo = todasRecebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
+    const d = await tg("getUpdates?limit=100");
+    const recebidas = d.result
+      .map(u => u.message)
+      .filter(m => m && m.text && String(m.chat.id) === chat && m.date >= INICIO)
+      .map(m => ({date: m.date, text: m.text, mine: false}));
+    const tudo = recebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
     mostrarMensagens(tudo);
   } catch(e) {
-    mostrarMensagens([{date: Math.floor(Date.now()/1000), text: "ERRO TELEGRAM: " + e.message, mine: false, erro: true}]);
+    $("status").innerText = "Erro nas mensagens: " + e.message;
   } finally {
     polling = false;
   }
 }
 
-/* ---------- foto ---------- */
-async function enviarFoto(video) {
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
-  const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.8));
-  if (!blob) throw new Error("Não foi possível capturar a foto.");
-  const form = new FormData();
-  form.append("chat_id", chat);
-  form.append("photo", blob, "movimento.jpg");
-  form.append("caption", "Movimento detectado!");
-  await tg("sendPhoto", {method: "POST", body: form});
-}
-
-/* ---------- áudio ---------- */
-async function gravarAudio() {
-  const btn = $("recordAudio");
-  let stream;
-  try {
-    btn.disabled = true;
-    stream = await navigator.mediaDevices.getUserMedia({audio: true});
-    const mime = ["audio/ogg;codecs=opus","audio/webm;codecs=opus","audio/webm","audio/mp4"]
-      .find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
-    if (!mime) throw new Error("Gravação de áudio não suportada neste navegador.");
-    const ext = mime.includes("ogg") ? "ogg" : mime.includes("mp4") ? "m4a" : "webm";
-    const recorder = new MediaRecorder(stream, {mimeType: mime});
-    const chunks = [];
-    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    recorder.onstop = async () => {
-      try {
-        const audio = new Blob(chunks, {type: mime});
-        const form = new FormData();
-        form.append("chat_id", chat);
-        let metodo = "sendDocument", campo = "document";
-        if (ext === "ogg") { metodo = "sendVoice"; campo = "voice"; }
-        else if (ext === "m4a") { metodo = "sendAudio"; campo = "audio"; }
-        form.append(campo, audio, "gravacao." + ext);
-        $("status").innerText = "Enviando áudio...";
-        await tg(metodo, {method: "POST", body: form});
-        $("status").innerText = "Áudio enviado!";
-      } catch(e) {
-        $("status").innerText = "Erro no áudio: " + e.message;
-      } finally {
-        stream.getTracks().forEach(t => t.stop());
-        btn.disabled = false;
-        btn.innerText = "Gravar áudio por 10 segundos";
-      }
-    };
-    recorder.start();
-    btn.innerText = "Gravando...";
-    $("status").innerText = "Microfone ativo. Gravando por 10 segundos.";
-    setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, 10000);
-  } catch(e) {
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    $("status").innerText = e.message;
-    btn.disabled = false;
-    btn.innerText = "Gravar áudio por 10 segundos";
-  }
-}
-
-/* ---------- alarme ---------- */
-async function iniciarAlarme() {
-  if (!readCfg()) return;
-  falar("Ola, Você esta participando de uma Simulação, você foi escolhido para este teste");
-  ultimaFala = Date.now();
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {facingMode: $("cam").value}
-    });
-    const video = $("v");
-    video.srcObject = stream;
-    await video.play();
-    try { await navigator.wakeLock.request("screen"); } catch(e) {}
-
-    $("setup").style.display = "none";
-    $("recordAudio").style.display = "block";
-    $("telaPreta").style.display = "flex";
-
-    const canvas = document.createElement("canvas");
-    canvas.width = 320; canvas.height = 240;
-    const ctx = canvas.getContext("2d", {willReadFrequently: true});
-    ctx.filter = "blur(3px)";
-
-    clearInterval(alarmTimer);
-    alarmTimer = setInterval(async () => {
-      if (video.readyState < 2) return;
-      ctx.drawImage(video, 0, 0, 320, 240);
-      const d = ctx.getImageData(0, 0, 320, 240).data;
-      const gray = new Uint8Array(320 * 240);
-      for (let i = 0; i < gray.length; i++) {
-        gray[i] = (d[i*4] + d[i*4+1] + d[i*4+2]) / 3;
-      }
-      if (prev) {
-        let area = 0;
-        for (let i = 0; i < gray.length; i++) {
-          if (Math.abs(gray[i] - prev[i]) > 25) area++;
-        }
-        const movimento = area > LIMITE;
-        if (!buscandoLocal) {
-          $("status").innerText = movimento ? "MOVIMENTO! (" + area + ")" : "Sem movimento (" + area + ")";
-        }
-
-        /* esfera reage: vermelha com movimento, volta ao verde após 3s parado */
-        if (movimento) {
-          ultimoMov = Date.now();
-          $("esfera").classList.add("alerta");
-          if (Date.now() - ultimaFala > INTERVALO_FALA && !speechSynthesis.speaking && !buscandoLocal) {
-            ultimaFala = Date.now();
-            falar(FRASES[Math.floor(Math.random() * FRASES.length)]);
-          }
-        } else if (Date.now() - ultimoMov > 3000) {
-          $("esfera").classList.remove("alerta");
-        }
-
-        if (movimento && Date.now() - ultimo > INTERVALO) {
-          ultimo = Date.now();
-          try { await enviarFoto(video); }
-          catch(e) { $("status").innerText = "Erro ao enviar foto: " + e.message; }
-        }
-      }
-      prev = gray;
-    }, 300);
-
-    conectar();
-  } catch(e) {
-    $("status").innerText = "Erro: " + e.message;
-  }
-}
-
-/* ---------- eventos ---------- */
 $("connect").onclick = () => { if (readCfg()) conectar(); };
-$("go").onclick = iniciarAlarme;
 $("sendMessage").onclick = enviarMensagem;
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
-$("recordAudio").onclick = gravarAudio;
-$("telaPreta").addEventListener("click", falarLocal);
 
 loadCfg();
 </script>
