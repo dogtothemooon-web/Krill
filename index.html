@@ -106,7 +106,7 @@ async function avisarDigitando() {
   } catch(e) {}
 }
 
-/* ---------- apagar automático ---------- */
+/* ---------- apagar automático (site + Telegram ao mesmo tempo) ---------- */
 function agendar(id, dataMs) {
   if (!id || agendadas.has(id)) return;
   agendadas.add(id);
@@ -116,15 +116,22 @@ function agendar(id, dataMs) {
 }
 
 async function apagar(id) {
+  /* some do site e do Telegram no mesmo instante */
   apagadas.add(id);
   render();
-  try {
-    await tg("deleteMessage", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({chat_id: chat, message_id: id})
-    });
-  } catch(e) {}
+  for (let i = 0; i < 4; i++) {
+    try {
+      await tg("deleteMessage", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({chat_id: chat, message_id: id})
+      });
+      return;
+    } catch(e) {
+      if (/not found|can't be deleted/i.test(e.message)) return;
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
 }
 
 /* ---------- conexão ---------- */
@@ -211,13 +218,17 @@ async function carregarMensagens() {
   if (polling) return;
   polling = true;
   try {
-    const d = await tg("getUpdates?limit=100");
-    const msgs = d.result
+    const d = await tg("getUpdates?limit=100&offset=-100");
+    const todasDoChat = d.result
       .map(u => u.message)
-      .filter(m => m && (m.text || m.photo) && String(m.chat.id) === chat && m.date >= INICIO && !apagadas.has(m.message_id));
+      .filter(m => m && String(m.chat.id) === chat && !apagadas.has(m.message_id));
+
+    /* agenda a exclusão no Telegram de TODAS as mensagens do chat (inclusive antigas) */
+    todasDoChat.forEach(m => agendar(m.message_id, m.date * 1000));
 
     const recebidas = [];
-    for (const m of msgs) {
+    for (const m of todasDoChat) {
+      if (!(m.text || m.photo) || m.date < INICIO) continue;
       const item = {id: m.message_id, date: m.date, text: m.text || m.caption || "", mine: false};
       if (m.photo) {
         const maior = m.photo[m.photo.length - 1];
@@ -225,7 +236,6 @@ async function carregarMensagens() {
         catch(e) { item.text += " [foto indisponível]"; }
       }
       recebidas.push(item);
-      agendar(item.id, m.date * 1000);
     }
 
     todas = recebidas.concat(enviadas).sort((a, b) => a.date - b.date).slice(-40);
