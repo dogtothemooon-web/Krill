@@ -124,8 +124,8 @@ async function apagar(id) {
 /* ---------- conexão ---------- */
 async function conectar() {
   try {
-    const d = await tg("getMe");
-    $("status").innerText = "Conectado como @" + d.result.username;
+    await tg("getMe");
+    $("status").innerText = "";
   } catch(e) {
     $("status").innerText = "Token inválido ou sem internet: " + e.message;
     return false;
