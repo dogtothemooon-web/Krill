@@ -50,9 +50,9 @@ const agendadas = new Set();
 const apagadas = new Set();
 const INICIO = Math.floor(Date.now() / 1000) - 5;
 
-/* tempo até apagar: sorteado entre 10 e 15 segundos */
-const TEMPO_MIN = 10000;
-const TEMPO_MAX = 15000;
+/* tempo até apagar: sorteado entre 8 e 10 segundos */
+const TEMPO_MIN = 5000;
+const TEMPO_MAX = 8000;
 
 function loadCfg() {
   try {
