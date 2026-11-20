@@ -6,7 +6,7 @@
 <title>Chat Telegram</title>
 <style>
 body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee}
-input,select,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
+input,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
 button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
 #status{font-size:17px;margin:10px 0;min-height:22px}
@@ -28,12 +28,6 @@ button:disabled{opacity:.5}
   <input id="chat" placeholder="Chat ID" inputmode="numeric">
   <button id="connect">Conectar</button>
 </div>
-
-<select id="tempo">
-  <option value="10000">Apagar após 10 segundos</option>
-  <option value="15000" selected>Apagar após 15 segundos</option>
-  <option value="0">Não apagar</option>
-</select>
 
 <div id="status"></div>
 
@@ -59,12 +53,15 @@ const agendadas = new Set();
 const apagadas = new Set();
 const INICIO = Math.floor(Date.now() / 1000) - 5;
 
+/* tempo até apagar: sorteado entre 10 e 15 segundos */
+const TEMPO_MIN = 10000;
+const TEMPO_MAX = 15000;
+
 function loadCfg() {
   try {
     const c = JSON.parse(localStorage.getItem("alarme_cfg2") || "{}");
     $("token").value = c.token || "";
     $("chat").value = c.chat || "";
-    if (c.tempo !== undefined) $("tempo").value = c.tempo;
   } catch(e) {}
 }
 function readCfg() {
@@ -75,7 +72,7 @@ function readCfg() {
     return false;
   }
   try {
-    localStorage.setItem("alarme_cfg2", JSON.stringify({token: TOKEN, chat, tempo: $("tempo").value}));
+    localStorage.setItem("alarme_cfg2", JSON.stringify({token: TOKEN, chat}));
   } catch(e) {}
   return true;
 }
@@ -90,9 +87,9 @@ async function tg(metodo, opcoes = {}) {
 
 /* ---------- apagar automático ---------- */
 function agendar(id, dataMs) {
-  const tempo = Number($("tempo").value);
-  if (!tempo || !id || agendadas.has(id)) return;
+  if (!id || agendadas.has(id)) return;
   agendadas.add(id);
+  const tempo = TEMPO_MIN + Math.random() * (TEMPO_MAX - TEMPO_MIN);
   const espera = Math.max(0, dataMs + tempo - Date.now());
   setTimeout(() => apagar(id), espera);
 }
@@ -252,7 +249,6 @@ async function carregarMensagens() {
 }
 
 $("connect").onclick = () => { if (readCfg()) conectar(); };
-$("tempo").onchange = () => { if (TOKEN) readCfg(); };
 $("sendMessage").onclick = enviarMensagem;
 $("photoBtn").onclick = () => $("photoInput").click();
 $("photoInput").onchange = e => enviarFoto(e.target.files[0]);
