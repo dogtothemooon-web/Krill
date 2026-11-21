@@ -10,20 +10,14 @@ body{font-family:sans-serif;margin:0;padding:16px;background:#111;color:#eee;box
 input,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee}
 button{background:#2a7de1;border:0;font-weight:bold}
 button:disabled{opacity:.5}
-button.red{background:#d33}
-button.gray{background:#444}
 #logo{display:block;flex-shrink:0;width:calc(100% + 32px);margin:-16px -16px 10px -16px;aspect-ratio:3/1;object-fit:cover;object-position:center 68%}
 #setup{flex-shrink:0}
 #status{flex-shrink:0;font-size:17px;margin:6px 0;min-height:22px}
 #messages{flex:1;min-height:80px;overflow-y:auto;background:#1b1b1b;border:1px solid #444;border-radius:8px;padding:10px;margin:6px 0}
 .msg{padding:9px;margin:6px 0;border-radius:8px;background:#303030;overflow-wrap:anywhere}
 .mine{background:#174b75;text-align:right}
-.msg img,.msg video{max-width:100%;max-height:260px;border-radius:6px;display:block;margin:4px 0}
+.msg img{max-width:100%;max-height:260px;border-radius:6px;display:block;margin:4px 0}
 .row{display:flex;gap:8px;flex-shrink:0;padding-bottom:env(safe-area-inset-bottom,0px)}
-.cam{display:flex;flex-wrap:wrap;gap:8px;flex-shrink:0}
-.cam button{flex:1 1 40%;margin:2px 0;padding:10px;font-size:15px}
-#preview{display:none;flex-shrink:0;width:100%;max-height:150px;background:#000;border-radius:8px;object-fit:contain;margin:4px 0}
-#preview.espelho{transform:scaleX(-1)}
 </style>
 </head>
 <body>
@@ -37,14 +31,6 @@ button.gray{background:#444}
 </div>
 
 <div id="status"></div>
-
-<video id="preview" muted playsinline autoplay></video>
-<div class="cam">
-  <button id="camBtn" class="gray" disabled>📷 Câmera</button>
-  <button id="flipBtn" class="gray" disabled>🔄 Trocar câmera</button>
-  <button id="recBtn" disabled>⏺ Gravar</button>
-  <button id="liveBtn" disabled>🔴 Ao vivo</button>
-</div>
 
 <div id="messages"></div>
 
@@ -70,15 +56,6 @@ const INICIO = Math.floor(Date.now() / 1000) - 5;
 /* tempo até apagar: sorteado entre 10 e 15 segundos */
 const TEMPO_MIN = 10000;
 const TEMPO_MAX = 15000;
-/* duração de cada trecho no modo "ao vivo" */
-const TRECHO_MS = 5000;
-
-/* câmera */
-let stream = null;
-let lado = "environment";   /* "environment" = traseira, "user" = frontal */
-let gravando = false;
-let aoVivo = false;
-let recorderAtual = null;
 
 function loadCfg() {
   try {
@@ -155,7 +132,6 @@ async function conectar() {
   }
   $("messageText").disabled = false;
   $("sendMessage").disabled = false;
-  $("camBtn").disabled = false;
   carregarMensagens();
   clearInterval(pollTimer);
   pollTimer = setInterval(carregarMensagens, 3000);
@@ -188,158 +164,8 @@ async function enviarMensagem() {
   }
 }
 
-/* ---------- câmera (vídeo sem som, frontal e traseira) ---------- */
-function nomeLado() { return lado === "user" ? "frontal" : "traseira"; }
-
-function pedirCamera() {
-  return navigator.mediaDevices.getUserMedia({
-    video: {facingMode: {ideal: lado}, width: {ideal: 640}, height: {ideal: 480}},
-    audio: false
-  });
-}
-
-function mostrarCamera(novo) {
-  stream = novo;
-  const v = $("preview");
-  v.srcObject = stream;
-  v.style.display = "block";
-  v.classList.toggle("espelho", lado === "user");  /* espelha só a prévia da frontal */
-  $("camBtn").innerText = "✖ Fechar câmera";
-  $("flipBtn").disabled = false;
-  $("status").innerText = "Câmera " + nomeLado() + " ligada (sem som).";
-  atualizarBotoes();
-}
-
-async function ligarCamera() {
-  try {
-    mostrarCamera(await pedirCamera());
-  } catch(e) {
-    $("status").innerText = "Não consegui abrir a câmera: " + e.message;
-  }
-}
-
-async function trocarCamera() {
-  if (!stream) return;
-  const anterior = lado;
-  lado = lado === "user" ? "environment" : "user";
-  $("flipBtn").disabled = true;
-  try {
-    const novo = await pedirCamera();
-    const antigo = stream;
-    mostrarCamera(novo);
-    /* fecha a câmera antiga; se estava gravando, o trecho termina e é enviado */
-    antigo.getTracks().forEach(t => t.stop());
-  } catch(e) {
-    lado = anterior;
-    $("flipBtn").disabled = false;
-    $("status").innerText = "Não consegui trocar de câmera: " + e.message;
-  }
-}
-
-function desligarCamera() {
-  aoVivo = false;
-  if (recorderAtual && recorderAtual.state !== "inactive") recorderAtual.stop();
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = null;
-  $("preview").srcObject = null;
-  $("preview").style.display = "none";
-  $("camBtn").innerText = "📷 Câmera";
-  $("flipBtn").disabled = true;
-  atualizarBotoes();
-}
-
-function escolherFormato() {
-  const opcoes = ["video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
-  for (const t of opcoes) {
-    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
-  }
-  return "";
-}
-
-/* grava um trecho; se ms for informado, para sozinho */
-function gravarTrecho(ms) {
-  return new Promise(resolve => {
-    const mime = escolherFormato();
-    const pedacos = [];
-    let rec;
-    try { rec = new MediaRecorder(stream, mime ? {mimeType: mime} : {}); }
-    catch(e) { $("status").innerText = "Gravação não suportada: " + e.message; return resolve(null); }
-    recorderAtual = rec;
-    rec.ondataavailable = e => { if (e.data && e.data.size) pedacos.push(e.data); };
-    rec.onstop = () => resolve(new Blob(pedacos, {type: rec.mimeType || mime || "video/webm"}));
-    rec.start();
-    if (ms) setTimeout(() => { if (rec.state !== "inactive") rec.stop(); }, ms);
-  });
-}
-
-async function enviarVideo(blob) {
-  if (!blob || blob.size < 1000) return;
-  const mp4 = blob.type.includes("mp4");
-  const fd = new FormData();
-  fd.append("chat_id", chat);
-  fd.append("supports_streaming", "true");
-  fd.append("video", blob, mp4 ? "video.mp4" : "video.webm");
-  try {
-    const d = await tg("sendVideo", {method: "POST", body: fd});
-    const id = d.result.message_id;
-    enviadas.push({id, date: Math.floor(Date.now()/1000), text: "", mine: true, kind: "video", url: URL.createObjectURL(blob)});
-    agendar(id, Date.now());
-    $("status").innerText = "Vídeo enviado.";
-    carregarMensagens();
-  } catch(e) {
-    $("status").innerText = "Erro ao enviar vídeo: " + e.message;
-  }
-}
-
-function atualizarBotoes() {
-  $("recBtn").innerText = gravando ? "⏹ Parar e enviar" : "⏺ Gravar";
-  $("recBtn").className = gravando ? "red" : "";
-  $("liveBtn").innerText = aoVivo ? "⏹ Parar ao vivo" : "🔴 Ao vivo";
-  $("liveBtn").className = aoVivo ? "red" : "";
-  $("recBtn").disabled = !stream || aoVivo;
-  $("liveBtn").disabled = !stream || gravando;
-}
-
-async function alternarGravacao() {
-  if (!stream) return;
-  if (gravando) {
-    gravando = false;
-    atualizarBotoes();
-    if (recorderAtual && recorderAtual.state !== "inactive") recorderAtual.stop();
-    return;
-  }
-  gravando = true;
-  atualizarBotoes();
-  $("status").innerText = "Gravando (" + nomeLado() + ")...";
-  const blob = await gravarTrecho(0);
-  gravando = false;
-  atualizarBotoes();
-  await enviarVideo(blob);
-}
-
-/* "ao vivo": grava e envia trechos seguidos de 5 s */
-async function alternarAoVivo() {
-  if (!stream) return;
-  if (aoVivo) {
-    aoVivo = false;
-    atualizarBotoes();
-    if (recorderAtual && recorderAtual.state !== "inactive") recorderAtual.stop();
-    return;
-  }
-  aoVivo = true;
-  atualizarBotoes();
-  $("status").innerText = "Ao vivo: enviando trechos de " + (TRECHO_MS/1000) + " s...";
-  while (aoVivo && stream) {
-    const blob = await gravarTrecho(TRECHO_MS);
-    enviarVideo(blob);
-  }
-  aoVivo = false;
-  atualizarBotoes();
-  $("status").innerText = "Ao vivo encerrado.";
-}
-
-/* ---------- receber foto / vídeo ---------- */
-async function resolverArquivo(fileId) {
+/* ---------- receber foto ---------- */
+async function resolverFoto(fileId) {
   if (fileUrls[fileId]) return fileUrls[fileId];
   const d = await tg("getFile?file_id=" + encodeURIComponent(fileId));
   const url = "https://api.telegram.org/file/bot" + TOKEN + "/" + d.result.file_path;
@@ -364,16 +190,7 @@ function render() {
     const topo = document.createElement("div");
     topo.textContent = hora + (m.text ? " — " + m.text : "");
     div.appendChild(topo);
-    if (m.url && m.kind === "video") {
-      const vid = document.createElement("video");
-      vid.src = m.url;
-      vid.muted = true;
-      vid.autoplay = true;
-      vid.loop = true;
-      vid.playsInline = true;
-      vid.controls = true;
-      div.appendChild(vid);
-    } else if (m.url) {
+    if (m.url) {
       const img = document.createElement("img");
       img.src = m.url;
       img.onclick = () => window.open(m.url, "_blank");
@@ -391,20 +208,16 @@ async function carregarMensagens() {
     const d = await tg("getUpdates?limit=100");
     const msgs = d.result
       .map(u => u.message)
-      .filter(m => m && (m.text || m.photo || m.video || m.video_note || m.animation) && String(m.chat.id) === chat && m.date >= INICIO && !apagadas.has(m.message_id));
+      .filter(m => m && (m.text || m.photo) && String(m.chat.id) === chat && m.date >= INICIO && !apagadas.has(m.message_id));
 
     const recebidas = [];
     for (const m of msgs) {
       const item = {id: m.message_id, date: m.date, text: m.text || m.caption || "", mine: false};
-      try {
-        if (m.photo) {
-          item.url = await resolverArquivo(m.photo[m.photo.length - 1].file_id);
-        } else if (m.video || m.video_note || m.animation) {
-          const v = m.video || m.video_note || m.animation;
-          item.url = await resolverArquivo(v.file_id);
-          item.kind = "video";
-        }
-      } catch(e) { item.text += " [arquivo indisponível]"; }
+      if (m.photo) {
+        const maior = m.photo[m.photo.length - 1];
+        try { item.url = await resolverFoto(maior.file_id); }
+        catch(e) { item.text += " [foto indisponível]"; }
+      }
       recebidas.push(item);
       agendar(item.id, m.date * 1000);
     }
@@ -420,10 +233,6 @@ async function carregarMensagens() {
 
 $("connect").onclick = () => { if (readCfg()) conectar(); };
 $("sendMessage").onclick = enviarMensagem;
-$("camBtn").onclick = () => stream ? desligarCamera() : ligarCamera();
-$("flipBtn").onclick = trocarCamera;
-$("recBtn").onclick = alternarGravacao;
-$("liveBtn").onclick = alternarAoVivo;
 $("messageText").addEventListener("input", avisarDigitando);
 $("messageText").addEventListener("keydown", e => { if (e.key === "Enter") enviarMensagem(); });
 
