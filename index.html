@@ -5,12 +5,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Página fora do Ar, teste finalizado Jesus te Ama</title>
 <style>
-html,body{height:100%}
-body{margin:0;background:#111;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;box-sizing:border-box}
+html,body{margin:0}
+body{
+  min-height:calc(100vh + 1px); /* folga para poder arrastar */
+  background:#111;color:#eee;font-family:sans-serif;
+  display:flex;align-items:center;justify-content:center;
+  text-align:center;
+}
 h1{font-size:clamp(40px,12vw,96px);line-height:1.1;margin:0}
+p{font-size:clamp(16px,4vw,32px);margin:16px 0 0}
+#ptr{
+  position:fixed;top:-50px;left:50%;transform:translateX(-50%);
+  background:#333;color:#eee;padding:8px 16px;border-radius:20px;
+  font-size:14px;transition:top .2s;
+}
 </style>
 </head>
 <body>
-<h1>Página fora do Ar</h1>
+<div id="ptr">↓ Solte para atualizar</div>
+<div>
+  <h1>Página fora do Ar</h1>
+  <p>Teste finalizado, Jesus te Ama</p>
+</div>
+
+<script>
+let startY = 0, pulling = false;
+const ptr = document.getElementById('ptr');
+
+addEventListener('touchstart', e => {
+  if (window.scrollY === 0) { startY = e.touches[0].clientY; pulling = true; }
+}, {passive:true});
+
+addEventListener('touchmove', e => {
+  if (!pulling) return;
+  const dist = e.touches[0].clientY - startY;
+  ptr.style.top = dist > 20 ? '20px' : '-50px';
+}, {passive:true});
+
+addEventListener('touchend', e => {
+  if (!pulling) return;
+  const dist = e.changedTouches[0].clientY - startY;
+  pulling = false;
+  ptr.style.top = '-50px';
+  if (dist > 100) location.reload();
+});
+</script>
 </body>
 </html>
