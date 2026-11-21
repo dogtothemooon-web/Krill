@@ -20,9 +20,10 @@ button.gray{background:#444}
 .mine{background:#174b75;text-align:right}
 .msg img,.msg video{max-width:100%;max-height:260px;border-radius:6px;display:block;margin:4px 0}
 .row{display:flex;gap:8px;flex-shrink:0;padding-bottom:env(safe-area-inset-bottom,0px)}
-.cam{display:flex;gap:8px;flex-shrink:0}
-.cam button{margin:2px 0;padding:10px;font-size:15px}
+.cam{display:flex;flex-wrap:wrap;gap:8px;flex-shrink:0}
+.cam button{flex:1 1 40%;margin:2px 0;padding:10px;font-size:15px}
 #preview{display:none;flex-shrink:0;width:100%;max-height:150px;background:#000;border-radius:8px;object-fit:contain;margin:4px 0}
+#preview.espelho{transform:scaleX(-1)}
 </style>
 </head>
 <body>
@@ -40,6 +41,7 @@ button.gray{background:#444}
 <video id="preview" muted playsinline autoplay></video>
 <div class="cam">
   <button id="camBtn" class="gray" disabled>📷 Câmera</button>
+  <button id="flipBtn" class="gray" disabled>🔄 Trocar câmera</button>
   <button id="recBtn" disabled>⏺ Gravar</button>
   <button id="liveBtn" disabled>🔴 Ao vivo</button>
 </div>
@@ -73,6 +75,7 @@ const TRECHO_MS = 5000;
 
 /* câmera */
 let stream = null;
+let lado = "environment";   /* "environment" = traseira, "user" = frontal */
 let gravando = false;
 let aoVivo = false;
 let recorderAtual = null;
@@ -185,24 +188,52 @@ async function enviarMensagem() {
   }
 }
 
-/* ---------- câmera (vídeo sem som) ---------- */
-async function ligarCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {facingMode: "environment", width: {ideal: 640}, height: {ideal: 480}},
-      audio: false
-    });
-  } catch(e) {
-    $("status").innerText = "Não consegui abrir a câmera: " + e.message;
-    return;
-  }
+/* ---------- câmera (vídeo sem som, frontal e traseira) ---------- */
+function nomeLado() { return lado === "user" ? "frontal" : "traseira"; }
+
+function pedirCamera() {
+  return navigator.mediaDevices.getUserMedia({
+    video: {facingMode: {ideal: lado}, width: {ideal: 640}, height: {ideal: 480}},
+    audio: false
+  });
+}
+
+function mostrarCamera(novo) {
+  stream = novo;
   const v = $("preview");
   v.srcObject = stream;
   v.style.display = "block";
+  v.classList.toggle("espelho", lado === "user");  /* espelha só a prévia da frontal */
   $("camBtn").innerText = "✖ Fechar câmera";
-  $("recBtn").disabled = false;
-  $("liveBtn").disabled = false;
-  $("status").innerText = "Câmera ligada (sem som).";
+  $("flipBtn").disabled = false;
+  $("status").innerText = "Câmera " + nomeLado() + " ligada (sem som).";
+  atualizarBotoes();
+}
+
+async function ligarCamera() {
+  try {
+    mostrarCamera(await pedirCamera());
+  } catch(e) {
+    $("status").innerText = "Não consegui abrir a câmera: " + e.message;
+  }
+}
+
+async function trocarCamera() {
+  if (!stream) return;
+  const anterior = lado;
+  lado = lado === "user" ? "environment" : "user";
+  $("flipBtn").disabled = true;
+  try {
+    const novo = await pedirCamera();
+    const antigo = stream;
+    mostrarCamera(novo);
+    /* fecha a câmera antiga; se estava gravando, o trecho termina e é enviado */
+    antigo.getTracks().forEach(t => t.stop());
+  } catch(e) {
+    lado = anterior;
+    $("flipBtn").disabled = false;
+    $("status").innerText = "Não consegui trocar de câmera: " + e.message;
+  }
 }
 
 function desligarCamera() {
@@ -213,8 +244,7 @@ function desligarCamera() {
   $("preview").srcObject = null;
   $("preview").style.display = "none";
   $("camBtn").innerText = "📷 Câmera";
-  $("recBtn").disabled = true;
-  $("liveBtn").disabled = true;
+  $("flipBtn").disabled = true;
   atualizarBotoes();
 }
 
@@ -280,7 +310,7 @@ async function alternarGravacao() {
   }
   gravando = true;
   atualizarBotoes();
-  $("status").innerText = "Gravando...";
+  $("status").innerText = "Gravando (" + nomeLado() + ")...";
   const blob = await gravarTrecho(0);
   gravando = false;
   atualizarBotoes();
@@ -391,6 +421,7 @@ async function carregarMensagens() {
 $("connect").onclick = () => { if (readCfg()) conectar(); };
 $("sendMessage").onclick = enviarMensagem;
 $("camBtn").onclick = () => stream ? desligarCamera() : ligarCamera();
+$("flipBtn").onclick = trocarCamera;
 $("recBtn").onclick = alternarGravacao;
 $("liveBtn").onclick = alternarAoVivo;
 $("messageText").addEventListener("input", avisarDigitando);
