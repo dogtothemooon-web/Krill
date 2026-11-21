@@ -3,11 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Página fora do Ar, teste finalizado Jesus te Ama</title>
+
+<script>
+// Sempre abre com um endereço novo, para não usar a versão antiga em cache
+if (!location.search.includes('v=')) {
+  location.replace(location.pathname + '?v=' + Date.now());
+}
+</script>
+
 <style>
 html,body{margin:0}
 body{
-  min-height:calc(100vh + 1px); /* folga para poder arrastar */
+  min-height:calc(100vh + 1px);
   background:#111;color:#eee;font-family:sans-serif;
   display:flex;align-items:center;justify-content:center;
   text-align:center;
@@ -47,7 +58,7 @@ addEventListener('touchend', e => {
   const dist = e.changedTouches[0].clientY - startY;
   pulling = false;
   ptr.style.top = '-50px';
-  if (dist > 100) location.reload();
+  if (dist > 100) location.replace(location.pathname + '?v=' + Date.now());
 });
 </script>
 </body>
